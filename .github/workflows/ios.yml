@@ -1,4 +1,6 @@
-# iOS 版編譯檢查：在 GitHub 的 macOS runner 上用 Xcode 建置（Windows 上無法編譯 iOS）
+# iOS 版：在 GitHub 的 macOS runner 上用 Xcode 建置（Windows 上無法編譯 iOS）
+#  - push/PR：編譯檢查（模擬器）
+#  - 手動執行 (workflow_dispatch)：另外產出「未簽名 .ipa」供 Sideloadly 用自己的 Apple ID 簽名安裝
 name: iOS build
 
 on:
@@ -21,16 +23,33 @@ jobs:
         working-directory: ios
         run: xcodegen generate
 
-      - name: Build for iOS Simulator
+      - name: Build for iOS Simulator (compile check)
         working-directory: ios
         run: |
-          set -o pipefail
-          xcodebuild -project wphoto.xcodeproj -scheme wphoto \
-            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | grep -E "error:|warning:|BUILD|Compiling|Linking|note: Using" || true
-          # 以上 grep 只是精簡輸出；真正的成敗由下面這行決定
           xcodebuild -project wphoto.xcodeproj -scheme wphoto \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -configuration Debug CODE_SIGNING_ALLOWED=NO \
             build -quiet
+
+      - name: Build unsigned device app (for Sideloadly)
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: ios
+        run: |
+          xcodebuild -project wphoto.xcodeproj -scheme wphoto \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            -derivedDataPath build build -quiet
+          # .ipa 就是 Payload/<app>.app 的 zip
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/wphoto.app Payload/
+          zip -qr wphoto-unsigned.ipa Payload
+          ls -la wphoto-unsigned.ipa
+
+      - name: Upload IPA artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wphoto-unsigned-ipa
+          path: ios/wphoto-unsigned.ipa
+          retention-days: 30
