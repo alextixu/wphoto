@@ -8,7 +8,10 @@ struct PhotoModeView: View {
     @State private var typeFilter: String? = nil
     @State private var selected: MediaFile?
 
-    private let columns = [GridItem(.adaptive(minimum: 110), spacing: 3)]
+    /// 格線間距：欄距、列距、外距都用同一個值，縮圖才會形成整齊的棋盤格
+    private static let gridSpacing: CGFloat = 3
+    /// 自動依寬度決定欄數（每格至少 110pt）：iPhone 直向約 3 欄，橫向與 iPad 自動增加
+    private let columns = [GridItem(.adaptive(minimum: 110), spacing: PhotoModeView.gridSpacing)]
 
     private var availableTypes: [String] {
         Array(Set(session.files.map(\.typeLabel))).sorted()
@@ -30,13 +33,13 @@ struct PhotoModeView: View {
                 Text("NoPhotos").foregroundStyle(.secondary)
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 3) {
+                    LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
                         ForEach(visibleFiles) { file in
                             ThumbnailCell(file: file)
                                 .onTapGesture { selected = file }
                         }
                     }
-                    .padding(3)
+                    .padding(Self.gridSpacing)
                 }
             }
         }
@@ -83,45 +86,54 @@ struct PhotoModeView: View {
         } message: {
             Text(session.errorMessage ?? "")
         }
-        .onAppear { session.restoreLastFolder() }
     }
 }
 
 /// 縮圖格（LazyVGrid 只會載入看得到的格子）
+///
+/// 格子大小只由底色方塊決定：`Color.wpCard.aspectRatio(1, contentMode: .fit)` = 欄寬 × 欄寬。
+/// 照片放在 overlay 裡 scaledToFill：overlay 不會改變底層尺寸，超出方塊的部分由 clipped() 裁掉。
+/// （舊寫法把照片放進 ZStack，ZStack 會回報「照片填滿後」的尺寸，非正方形照片因此把格子撐寬／撐高，
+///  蓋到隔壁格，看起來就是縮圖黏在一起、排不整齊。）
 struct ThumbnailCell: View {
     let file: MediaFile
     @State private var image: UIImage?
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Rectangle().fill(Color.wpCard)
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemName: file.isVideo ? "film" : "photo")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Color.wpCard
+            // .fit：永遠不超過格線給的寬度（.fill 在某些父視圖下會再次超出）
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    // 載入中／無法產生縮圖：置中的圖示
+                    Image(systemName: file.isVideo ? "film" : "photo")
+                        .foregroundStyle(.secondary)
+                }
             }
-            if file.isRaw {
-                Text("RAW")
-                    .font(.system(size: 9, weight: .bold))
-                    .padding(.horizontal, 5).padding(.vertical, 2)
-                    .background(Color(red: 0.56, green: 0.35, blue: 0.17))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .padding(5)
+            .overlay(alignment: .topLeading) {
+                if file.isRaw {
+                    Text("RAW")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Color(red: 0.56, green: 0.35, blue: 0.17))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .padding(5)
+                }
             }
-        }
-        .aspectRatio(1, contentMode: .fill)
-        .clipped()
-        .contentShape(Rectangle())
-        .task(id: file.url) {
-            image = ThumbnailCache.shared.cached(file.url)
-            if image == nil {
-                image = await ThumbnailCache.shared.thumbnail(for: file)
+            .clipped()
+            // clipped() 只裁畫面、不影響點擊範圍；contentShape 讓可點範圍 = 看得到的方塊，不會搶到隔壁格的點擊
+            .contentShape(Rectangle())
+            .task(id: file.url) {
+                image = ThumbnailCache.shared.cached(file.url)
+                if image == nil {
+                    image = await ThumbnailCache.shared.thumbnail(for: file)
+                }
             }
-        }
     }
 }
 

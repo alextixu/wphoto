@@ -13,8 +13,39 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    env:
+      # 固定 macos-15 映像目前的預設 Xcode 16.4（iOS 18.5 SDK），避免映像更換預設值時工具鏈悄悄改變
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      # MobileVLCKit：VideoLAN 官方二進位檔；網址與 sha256 取自官方 podspec（VLCKit 3.0 分支與 CocoaPods trunk 一致）
+      VLCKIT_VERSION: "3.7.3"
+      VLCKIT_URL: https://download.videolan.org/pub/cocoapods/prod/MobileVLCKit-3.7.3-319ed2c0-79128878.tar.xz
+      VLCKIT_SHA256: 0d04059906962ddc9a7bd1ebaa12e1f9ae85eb2466116a97a2f46886dd27a0a9
     steps:
       - uses: actions/checkout@v4
+
+      # 約 252 MiB 的壓縮檔，以 sha256 當快取鍵；每次（含命中快取）都會重新驗證 sha256
+      - name: Cache MobileVLCKit download
+        uses: actions/cache@v5
+        with:
+          path: ~/vlckit-cache
+          key: mobilevlckit-${{ env.VLCKIT_VERSION }}-${{ env.VLCKIT_SHA256 }}
+
+      # 模擬器編譯檢查也要連結 VLCKit，所以每次都要先準備好 ios/Vendor/MobileVLCKit.xcframework
+      - name: Fetch MobileVLCKit (official VideoLAN binary, sha256-verified)
+        working-directory: ios
+        run: |
+          TARBALL="$HOME/vlckit-cache/MobileVLCKit-$VLCKIT_VERSION.tar.xz"
+          mkdir -p "$HOME/vlckit-cache"
+          if [ ! -f "$TARBALL" ]; then
+            curl -fL --retry 5 --retry-all-errors -o "$TARBALL" "$VLCKIT_URL"
+          fi
+          echo "$VLCKIT_SHA256  $TARBALL" | shasum -a 256 -c -
+          rm -rf "$RUNNER_TEMP/vlckit" Vendor/MobileVLCKit.xcframework
+          mkdir -p "$RUNNER_TEMP/vlckit" Vendor
+          tar -xf "$TARBALL" -C "$RUNNER_TEMP/vlckit"
+          mv "$RUNNER_TEMP/vlckit/MobileVLCKit-binary/MobileVLCKit.xcframework" Vendor/
+          rm -rf "$RUNNER_TEMP/vlckit"
+          ls Vendor/MobileVLCKit.xcframework
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -41,8 +72,23 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             -derivedDataPath build build -quiet
           # .ipa 就是 Payload/<app>.app 的 zip
-          mkdir -p Payload
+          rm -rf Payload && mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/wphoto.app Payload/
+          # 確認 MobileVLCKit 已嵌入且是動態框架；只留 arm64（iOS 17 用不到 armv7/armv7s）以縮小 .ipa
+          FW=Payload/wphoto.app/Frameworks/MobileVLCKit.framework/MobileVLCKit
+          test -f "$FW"
+          FW_TYPE="$(file "$FW")"
+          echo "$FW_TYPE"
+          # 明確 exit 1：runner 的 /bin/bash 是 3.2，失敗的 [[ ]] 不會觸發 set -e（bash 4.1 才改）
+          if [[ "$FW_TYPE" != *"dynamically linked shared library"* ]]; then
+            echo "::error::MobileVLCKit.framework is not a dynamic library"
+            exit 1
+          fi
+          if [[ "$(lipo -info "$FW")" == "Architectures in the fat file"* ]]; then
+            lipo "$FW" -thin arm64 -output "$FW.arm64"
+            mv "$FW.arm64" "$FW"
+          fi
+          lipo -info "$FW"
           zip -qr wphoto-unsigned.ipa Payload
           ls -la wphoto-unsigned.ipa
 

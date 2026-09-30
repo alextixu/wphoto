@@ -6,6 +6,8 @@ struct TheaterModeView: View {
     @StateObject private var session = FolderSession(kind: .video)
     @State private var showPicker = false
     @State private var playing: MediaFile?
+    /// 播放畫面關閉後 +1：剛下載完的影片重新檢查、補上封面與時長
+    @State private var refreshToken = 0
 
     private let columns = [GridItem(.adaptive(minimum: 160), spacing: 12)]
 
@@ -26,7 +28,7 @@ struct TheaterModeView: View {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(session.files) { file in
-                            EpisodeCard(file: file)
+                            EpisodeCard(file: file, refreshToken: refreshToken)
                                 .onTapGesture { playing = file }
                         }
                     }
@@ -41,6 +43,7 @@ struct TheaterModeView: View {
                 Button { showPicker = true } label: {
                     Image(systemName: "folder")
                 }
+                .accessibilityLabel(Text("ChooseFolder"))
             }
             ToolbarItem(placement: .bottomBar) {
                 if !session.files.isEmpty {
@@ -55,58 +58,107 @@ struct TheaterModeView: View {
                 session.open(url)
             }
         }
-        .fullScreenCover(item: $playing) { file in
-            PlayerScreen(file: file)
+        .fullScreenCover(item: $playing, onDismiss: { refreshToken += 1 }) { file in
+            PlaybackScreen(file: file)
         }
-        .onAppear { session.restoreLastFolder() }
+        .alert("Error", isPresented: Binding(get: { session.errorMessage != nil },
+                                             set: { if !$0 { session.errorMessage = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(session.errorMessage ?? "")
+        }
     }
 }
 
-/// 封面卡片：縮圖（影片第 1 秒畫面）＋檔名＋時長
+/// 封面卡片：縮圖＋時長＋檔名。
+/// 縮圖區尺寸只由 16:9 底色決定（寬 = 欄寬）；畫面放 overlay 裡 scaledToFill 再裁切，
+/// 所以非 16:9 的畫面不會把卡片撐大、蓋到隔壁卡片。
 struct EpisodeCard: View {
     let file: MediaFile
+    var refreshToken = 0
+
     @State private var image: UIImage?
-    @State private var duration: String = ""
+    @State private var duration = ""
+    @State private var isRemote = false
+
+    private struct LoadKey: Equatable {
+        let url: URL
+        let refreshToken: Int
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ZStack(alignment: .bottomTrailing) {
-                Rectangle().fill(Color.wpCard)
-                if let image {
-                    Image(uiImage: image).resizable().scaledToFill()
-                } else {
-                    Image(systemName: "film")
-                        .font(.title)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Color.wpCard
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .overlay {
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Image(systemName: "film")
+                            .font(.title)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                if !duration.isEmpty {
-                    Text(duration)
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(.black.opacity(0.7))
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                        .padding(6)
+                .overlay(alignment: .topTrailing) {
+                    if isRemote {
+                        // 還在 iCloud / NAS 上：播放前會先下載
+                        Image(systemName: "icloud.and.arrow.down")
+                            .font(.caption.weight(.semibold))
+                            .padding(5)
+                            .background(.black.opacity(0.6), in: Circle())
+                            .padding(6)
+                            .accessibilityLabel(Text("NotDownloaded"))
+                    }
                 }
-            }
-            .aspectRatio(16 / 9, contentMode: .fill)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(alignment: .bottomTrailing) {
+                    if !duration.isEmpty {
+                        Text(duration)
+                            .font(.caption2.weight(.semibold))
+                            .monospacedDigit()
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(.black.opacity(0.7))
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                            .padding(6)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
             Text(file.relativeName)
                 .font(.caption)
-                .lineLimit(2)
                 .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .lineLimit(2, reservesSpace: true)   // 標題區固定兩行高，整排卡片對齊
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // 點擊範圍 = 整張卡片（被裁掉的畫面不會攔截隔壁卡片的點擊）
         .contentShape(Rectangle())
-        .task(id: file.url) {
-            image = ThumbnailCache.shared.cached(file.url)
-            if image == nil {
-                image = await ThumbnailCache.shared.thumbnail(for: file, maxPixel: 640)
-            }
-            if let d = await VideoThumbnailer.duration(url: file.url) {
-                let total = Int(d.rounded())
-                let h = total / 3600, m = (total % 3600) / 60, s = total % 60
-                duration = h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
-            }
+        .task(id: LoadKey(url: file.url, refreshToken: refreshToken)) {
+            await load()
+        }
+    }
+
+    private func load() async {
+        if image == nil { image = ThumbnailCache.shared.cached(file.url) }
+        if duration.isEmpty, let seconds = ThumbnailCache.shared.cachedDuration(file.url) {
+            duration = PlaybackTime.string(seconds: seconds)
+        }
+        if image != nil && !duration.isEmpty {
+            isRemote = false
+            return
+        }
+        // 未下載的影片不讀縮圖與時長，避免瀏覽 NAS / iCloud 資料夾時把整部影片下載下來
+        guard await FileAvailability.isLikelyLocal(file.url) else {
+            isRemote = true
+            return
+        }
+        isRemote = false
+        if image == nil {
+            image = await ThumbnailCache.shared.thumbnail(for: file, maxPixel: 640)
+        }
+        if duration.isEmpty, let seconds = await ThumbnailCache.shared.duration(for: file) {
+            duration = PlaybackTime.string(seconds: seconds)
         }
     }
 }

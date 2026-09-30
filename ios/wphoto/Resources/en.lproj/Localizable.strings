@@ -3,7 +3,7 @@
 "PhotoMode" = "Photo Mode";
 "PhotoModeDesc" = "RAW · JPEG · HEIF · EXIF info";
 "VideoMode" = "Theater Mode";
-"VideoModeDesc" = "MP4 · MOV · HDR · Subtitles";
+"VideoModeDesc" = "MP4 · MKV · HDR · Subtitles";
 "FilesHint" = "Folders open through the Files app — iCloud Drive, On My iPhone, or a NAS connected in Files.";
 "ChooseFolder" = "Choose Folder";
 "PlaceholderPhoto" = "Choose a folder to browse photos";
@@ -11,7 +11,7 @@
 "Scanning" = "Scanning folder…";
 "NoPhotos" = "No supported photos in this folder";
 "NoVideos" = "No supported videos in this folder";
-"VideoFormatNote" = "This version plays MP4 / MOV / M4V with Apple's native engine. MKV and MTS are not supported yet.";
+"VideoFormatNote" = "Plays MP4, MOV, M4V, MKV, WebM, AVI, MTS, M2TS, TS, WMV, FLV and 3GP. Videos stored in iCloud or on a NAS are downloaded to your iPhone before they play.";
 "AllTypes" = "All types";
 "Type" = "Type";
 "PhotoCount" = "%d photos (%d RAW)";
@@ -42,3 +42,27 @@
 "Software" = "Software";
 "ImageSize" = "Image size";
 "GPS" = "GPS";
+"RAW" = "RAW";
+
+/* Playback */
+"Preparing" = "Preparing…";
+"Downloading" = "Downloading…";
+"DownloadNote" = "This video isn't on your iPhone yet. It will start playing once the whole file has downloaded.";
+"DownloadFailed" = "Couldn't download this video.";
+"CantPlayVideo" = "This video can't be played.";
+"NotDownloaded" = "Not downloaded";
+"Cancel" = "Cancel";
+"Close" = "Close";
+"Play" = "Play";
+"Pause" = "Pause";
+"Back10" = "Back 10 seconds";
+"Forward10" = "Forward 10 seconds";
+"Speed" = "Playback Speed";
+"Subtitles" = "Subtitles";
+"SubtitlesOff" = "Off";
+"SubtitleTrack" = "Subtitle %d";
+"Audio" = "Audio";
+"AudioTrack" = "Audio track %d";
+"TrackLanguage" = "%1$@ (%2$@)";
+"FillScreen" = "Fill Screen";
+"FitScreen" = "Fit to Screen";

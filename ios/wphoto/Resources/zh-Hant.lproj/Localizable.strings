@@ -3,7 +3,7 @@
 "PhotoMode" = "照片模式";
 "PhotoModeDesc" = "RAW · JPEG · HEIF · 拍攝資訊";
 "VideoMode" = "看劇模式";
-"VideoModeDesc" = "MP4 · MOV · HDR · 字幕";
+"VideoModeDesc" = "MP4 · MKV · HDR · 字幕";
 "FilesHint" = "資料夾透過「檔案」App 開啟——iCloud Drive、我的 iPhone，或在「檔案」中連接的 NAS 都可以。";
 "ChooseFolder" = "選擇資料夾";
 "PlaceholderPhoto" = "選擇資料夾開始瀏覽照片";
@@ -11,7 +11,7 @@
 "Scanning" = "掃描資料夾中…";
 "NoPhotos" = "這個資料夾裡沒有支援的照片格式";
 "NoVideos" = "這個資料夾裡沒有支援的影片格式";
-"VideoFormatNote" = "此版本使用 Apple 原生引擎播放 MP4 / MOV / M4V，MKV 與 MTS 暫不支援。";
+"VideoFormatNote" = "支援 MP4、MOV、M4V、MKV、WebM、AVI、MTS、M2TS、TS、WMV、FLV、3GP。存放在 iCloud 或 NAS 的影片會先下載到 iPhone 再播放。";
 "AllTypes" = "全部類型";
 "Type" = "類型";
 "PhotoCount" = "共 %d 張照片（RAW %d 張）";
@@ -42,3 +42,27 @@
 "Software" = "軟體";
 "ImageSize" = "影像尺寸";
 "GPS" = "GPS";
+"RAW" = "RAW";
+
+/* 播放 */
+"Preparing" = "準備中…";
+"Downloading" = "下載中…";
+"DownloadNote" = "這部影片還不在 iPhone 上，整個檔案下載完成後就會開始播放。";
+"DownloadFailed" = "無法下載這部影片";
+"CantPlayVideo" = "無法播放這部影片";
+"NotDownloaded" = "尚未下載";
+"Cancel" = "取消";
+"Close" = "關閉";
+"Play" = "播放";
+"Pause" = "暫停";
+"Back10" = "倒退 10 秒";
+"Forward10" = "快轉 10 秒";
+"Speed" = "播放速度";
+"Subtitles" = "字幕";
+"SubtitlesOff" = "關閉";
+"SubtitleTrack" = "字幕 %d";
+"Audio" = "音軌";
+"AudioTrack" = "音軌 %d";
+"TrackLanguage" = "%1$@（%2$@）";
+"FillScreen" = "填滿畫面";
+"FitScreen" = "完整顯示";

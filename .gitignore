@@ -3,3 +3,6 @@ obj/
 *.user
 *.suo
 .vs/
+# iOS：VLCKit 二進位檔（約 1.3 GB，由 CI／README 步驟下載，不進 git）
+ios/Vendor/
+*.tar.xz

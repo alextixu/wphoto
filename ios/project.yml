@@ -18,6 +18,11 @@ targets:
     platform: iOS
     sources:
       - path: wphoto
+    dependencies:
+      # MobileVLCKit 3.7.3：VideoLAN 官方動態 xcframework（LGPL-2.1），用來播放 AVPlayer 不支援的 MKV/AVI/TS 等格式
+      # 不進 git：CI 先下載到 ios/Vendor/（驗證 sha256）再執行 xcodegen generate；本機建置步驟見 README
+      - framework: Vendor/MobileVLCKit.xcframework
+        embed: true
     info:
       path: wphoto/Info.plist
       properties:
