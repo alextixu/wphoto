@@ -92,6 +92,8 @@ struct VLCPlayerScreen: View {
             }
         }
         .task {
+            let controller = self.controller
+            subtitleModel.currentTimeMs = { [weak controller] in controller?.liveTimeMs ?? 0 }
             await subtitleModel.configure(videoURL: url, subtitleFiles: subtitles)
         }
         .onDisappear {

@@ -51,6 +51,9 @@ final class SubtitleModel: ObservableObject {
     /// 使用者關掉主字幕時記下的值：下一集也不自動開
     private static let offMarker = "off"
 
+    /// 目前播放位置（毫秒）：讀內嵌字幕時先讀這附近的，由播放畫面設定
+    var currentTimeMs: () -> Int = { 0 }
+
     private var videoURL: URL?
     private var configured = false
     /// 已讀過的字幕（主字幕／第二字幕互換時不必重讀）
@@ -186,7 +189,7 @@ final class SubtitleModel: ObservableObject {
             return
         }
         setLoading(true, slot: slot)
-        let scan = scanTask(for: option)
+        let scan = scanTask(for: option, nearMs: currentTimeMs())
         loadTasks[slot] = Task { [weak self] in
             let parsed = await scan.value
             guard let self, !Task.isCancelled else { return }
@@ -207,10 +210,16 @@ final class SubtitleModel: ObservableObject {
     }
 
     /// 同一個來源只讀一次（主字幕與第二字幕同時要同一軌時共用）
-    private func scanTask(for option: Option) -> Task<[SubtitleCue]?, Never> {
+    private func scanTask(for option: Option, nearMs: Int) -> Task<[SubtitleCue]?, Never> {
         if let running = scanTasks[option.id] { return running }
         let source = option.source
         let video = videoURL
+        let optionID = option.id
+        // 讀到一部分就先顯示（目前播放位置附近的字幕最先讀到）
+        let onPartial: @Sendable ([SubtitleCue]) -> Void = { [weak self] partial in
+            guard let self else { return }
+            Task { @MainActor in self.applyPartial(partial, optionID: optionID) }
+        }
         // userInitiated：低優先權的磁碟讀取會被 iOS 排在影片播放之後，邊播 4K 邊讀會慢到像卡住
         let task = Task.detached(priority: .userInitiated) { () -> [SubtitleCue]? in
             switch source {
@@ -218,11 +227,25 @@ final class SubtitleModel: ObservableObject {
                 return try? SubtitleFileParser.parse(url)
             case .embedded(let track):
                 guard let video else { return nil }
-                return try? MatroskaSubtitles.cues(in: video, track: track)
+                return try? MatroskaSubtitles.cues(in: video, track: track, nearMs: nearMs, onPartial: onPartial)
             }
         }
         scanTasks[option.id] = task
         return task
+    }
+
+    /// 部分結果：完整結果已經到了就忽略（避免較晚送達的部分結果蓋掉完整結果）
+    private func applyPartial(_ partial: [SubtitleCue], optionID: Int) {
+        guard cache[optionID] == nil else { return }
+        let cues = SubtitleCues(partial)
+        if mainID == optionID {
+            mainCues = cues
+            mainLoading = false
+        }
+        if secondID == optionID {
+            secondCues = cues
+            secondLoading = false
+        }
     }
 
     private func currentID(_ slot: Slot) -> Int? {

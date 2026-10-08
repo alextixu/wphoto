@@ -61,11 +61,15 @@ enum MatroskaSubtitles {
 
     /// 先用 Cues 索引直接跳到每一句字幕（mkvmerge 會替字幕軌的每個區塊建索引，18 GB 的電影也只要讀幾千次）；
     /// 索引裡沒有這一軌時才從頭掃描整個檔案。
-    static func cues(in url: URL, track: EmbeddedSubtitleTrack) throws -> [SubtitleCue] {
-        if let indexed = try cuesFromIndex(in: url, track: track), !indexed.isEmpty {
+    /// - nearMs：目前播放位置；有索引時先讀這附近的字幕，畫面馬上就有字幕可以顯示
+    /// - onPartial：讀到一部分就回報目前已讀到的全部字幕（背景執行緒呼叫）
+    static func cues(in url: URL, track: EmbeddedSubtitleTrack, nearMs: Int = 0,
+                     onPartial: (@Sendable ([SubtitleCue]) -> Void)? = nil) throws -> [SubtitleCue] {
+        if let indexed = try cuesFromIndex(in: url, track: track, nearMs: nearMs, onPartial: onPartial),
+           !indexed.isEmpty {
             return indexed
         }
-        return try cuesByScanning(in: url, track: track)
+        return try cuesByScanning(in: url, track: track, onPartial: onPartial)
     }
 
     private struct CueEntry {
@@ -76,7 +80,8 @@ enum MatroskaSubtitles {
     }
 
     /// 用 Cues 索引取字幕；索引不存在或沒有這一軌的項目時回傳 nil
-    private static func cuesFromIndex(in url: URL, track: EmbeddedSubtitleTrack) throws -> [SubtitleCue]? {
+    private static func cuesFromIndex(in url: URL, track: EmbeddedSubtitleTrack, nearMs: Int,
+                                      onPartial: (@Sendable ([SubtitleCue]) -> Void)?) throws -> [SubtitleCue]? {
         let r = try EBMLReader(url: url)
         let segment = try r.openSegment()
         let segmentDataStart = segment.dataStart
@@ -125,7 +130,12 @@ enum MatroskaSubtitles {
 
         // 2) 讀 Cues：只留這一軌、有 CueRelativePosition 的項目
         r.seek(to: cuesStart)
-        guard let cuesEl = try r.readElementHeader(), cuesEl.id == ID.cues, let cuesEnd = cuesEl.end else { return nil }
+        guard let cuesEl = try r.readElementHeader(), cuesEl.id == ID.cues, let cuesEnd = cuesEl.end,
+              let cuesSize = cuesEl.size else { return nil }
+        // 整段 Cues（通常 1～10 MB）一次讀進來：放在 NAS／iCloud 上時，逐塊讀會變成幾百次網路往返
+        if cuesSize <= 64 * 1024 * 1024 {
+            try r.prefetch(Int(cuesSize))
+        }
         var entries: [CueEntry] = []
         while r.position < cuesEnd {
             try Task.checkCancellation()
@@ -159,52 +169,145 @@ enum MatroskaSubtitles {
         }
         guard !entries.isEmpty else { return nil }
 
-        // 3) 依索引直接讀每一句（同一個 Cluster 的資料起點只算一次）
-        var clusterDataStart: [UInt64: UInt64] = [:]
+        // 3) 依索引直接讀每一句：
+        //    - 先讀離目前播放位置最近的（第一批很小，字幕幾乎馬上出現），其餘分批在背景補上
+        //    - 每批由 8 個讀取器同時讀（放在 NAS／iCloud 上時，網路延遲是主要成本）
+        let scale = Int64(timecodeScale)
+        func ms(_ ticks: UInt64) -> Int { Int(Int64(ticks) * scale / 1_000_000) }
+        let ordered = entries.sorted { abs(ms($0.timeTicks) - nearMs) < abs(ms($1.timeTicks) - nearMs) }
+
+        let workerCount = min(8, ordered.count)
+        let readers = try (0..<workerCount).map { _ in try EBMLReader(url: url) }
+        let shared = IndexedReadState(workers: workerCount)
         var cues: [SubtitleCue] = []
-        for (i, entry) in entries.enumerated() {
-            if i % 64 == 0 { try Task.checkCancellation() }
-            let dataStart: UInt64
-            if let known = clusterDataStart[entry.clusterPosition] {
-                dataStart = known
-            } else {
-                r.seek(to: segmentDataStart + entry.clusterPosition)
-                guard let cluster = try r.readElementHeader(), cluster.id == ID.cluster else { continue }
-                dataStart = cluster.dataStart
-                clusterDataStart[entry.clusterPosition] = dataStart
-            }
-            r.seek(to: dataStart + entry.relativePosition)
-            guard let el = try r.readElementHeader(), let elEnd = el.end else { continue }
-            var block: (relTime: Int16, text: String)?
-            var blockDuration: UInt64?
-            if el.id == ID.simpleBlock {
-                block = try readBlock(r, end: elEnd, track: track)
-            } else if el.id == ID.blockGroup {
-                while r.position < elEnd {
-                    guard let child = try r.readElementHeader(), let childEnd = child.end, let size = child.size else { break }
-                    if child.id == ID.block { block = try readBlock(r, end: childEnd, track: track) }
-                    if child.id == ID.blockDuration { blockDuration = try r.readUInt(size) }
-                    r.seek(to: childEnd)
+        cues.reserveCapacity(ordered.count)
+
+        var batchStart = 0
+        var batchSize = 32
+        while batchStart < ordered.count {
+            try Task.checkCancellation()
+            let batch = Array(ordered[batchStart..<min(batchStart + batchSize, ordered.count)])
+            let workers = min(workerCount, batch.count)
+            // 每個 worker 用自己的讀取器（各自的 FileHandle 與緩衝），結果收進加鎖的 shared
+            DispatchQueue.concurrentPerform(iterations: workers) { w in
+                var state = shared.state(for: w)
+                var found: [SubtitleCue] = []
+                var i = w
+                while i < batch.count {
+                    if let cue = try? readIndexedCue(readers[w], batch[i], segmentDataStart: segmentDataStart,
+                                                    track: track, scale: scale, state: &state) {
+                        found.append(cue)
+                    }
+                    i += workers
                 }
+                shared.finish(worker: w, cues: found, state: state)
             }
-            guard let block else { continue }
-            // CueTime 就是這個區塊的絕對時間
-            let startMs = Int(Int64(entry.timeTicks) * Int64(timecodeScale) / 1_000_000)
-            let ticks = entry.durationTicks ?? blockDuration
-            let durationMs = ticks.map { Int(Int64($0) * Int64(timecodeScale) / 1_000_000) } ?? 0
-            let endMs = durationMs > 0 ? startMs + durationMs : startMs + 3000
-            cues.append(SubtitleCue(startMs: startMs, endMs: endMs, text: block.text))
+            cues += shared.takeCues()
+            batchStart += batch.count
+            batchSize = 256
+            if batchStart < ordered.count, !cues.isEmpty {
+                onPartial?(cues)
+            }
         }
         return cues
     }
 
+    /// 每個讀取器自己的狀態
+    private struct WorkerState {
+        /// Cluster 位置 → 資料起點
+        var clusterDataStart: [UInt64: UInt64] = [:]
+        /// 上一個讀到的 Cluster 標頭長度（ID + 長度欄位）。同一個檔案幾乎都一樣（mkvmerge 多為 7 bytes），
+        /// 先用它直接算出字幕的位置，省掉讀標頭那一次往返（放在 NAS 上每次讀取都是一次網路往返）
+        var clusterHeaderLength: UInt64?
+    }
+
+    /// 同時讀取時共用的狀態（加鎖）
+    private final class IndexedReadState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var states: [WorkerState]
+        private var cues: [SubtitleCue] = []
+
+        init(workers: Int) {
+            states = Array(repeating: WorkerState(), count: workers)
+        }
+
+        func state(for worker: Int) -> WorkerState {
+            lock.lock(); defer { lock.unlock() }
+            return states[worker]
+        }
+
+        func finish(worker: Int, cues found: [SubtitleCue], state: WorkerState) {
+            lock.lock(); defer { lock.unlock() }
+            cues += found
+            states[worker] = state
+        }
+
+        func takeCues() -> [SubtitleCue] {
+            lock.lock(); defer { lock.unlock() }
+            let result = cues
+            cues = []
+            return result
+        }
+    }
+
+    /// 依一筆 Cues 項目讀出一句字幕
+    private static func readIndexedCue(_ r: EBMLReader, _ entry: CueEntry, segmentDataStart: UInt64,
+                                       track: EmbeddedSubtitleTrack, scale: Int64,
+                                       state: inout WorkerState) throws -> SubtitleCue? {
+        let clusterStart = segmentDataStart + entry.clusterPosition
+        if let known = state.clusterDataStart[entry.clusterPosition] {
+            return try readCue(r, at: known + entry.relativePosition, entry: entry, track: track, scale: scale)
+        }
+        // 先假設標頭長度跟上一個 Cluster 一樣：讀到的是這一軌的字幕區塊才採用，否則老實讀標頭
+        if let guess = state.clusterHeaderLength,
+           let cue = try? readCue(r, at: clusterStart + guess + entry.relativePosition,
+                                  entry: entry, track: track, scale: scale) {
+            return cue
+        }
+        r.seek(to: clusterStart)
+        guard let cluster = try r.readElementHeader(), cluster.id == ID.cluster else { return nil }
+        state.clusterDataStart[entry.clusterPosition] = cluster.dataStart
+        state.clusterHeaderLength = cluster.dataStart - clusterStart
+        return try readCue(r, at: cluster.dataStart + entry.relativePosition, entry: entry, track: track, scale: scale)
+    }
+
+    /// 讀 offset 處的 SimpleBlock / BlockGroup；不是這一軌的字幕就回傳 nil
+    private static func readCue(_ r: EBMLReader, at offset: UInt64, entry: CueEntry,
+                                track: EmbeddedSubtitleTrack, scale: Int64) throws -> SubtitleCue? {
+        r.seek(to: offset)
+        guard let el = try r.readElementHeader(), let elEnd = el.end else { return nil }
+        var block: (relTime: Int16, text: String)?
+        var blockDuration: UInt64?
+        if el.id == ID.simpleBlock {
+            block = try readBlock(r, end: elEnd, track: track)
+        } else if el.id == ID.blockGroup {
+            while r.position < elEnd {
+                guard let child = try r.readElementHeader(), let childEnd = child.end, let size = child.size else { break }
+                if child.id == ID.block { block = try readBlock(r, end: childEnd, track: track) }
+                if child.id == ID.blockDuration { blockDuration = try r.readUInt(size) }
+                r.seek(to: childEnd)
+            }
+        } else {
+            return nil
+        }
+        guard let block else { return nil }
+        // CueTime 就是這個區塊的絕對時間
+        let startMs = Int(Int64(entry.timeTicks) * scale / 1_000_000)
+        let ticks = entry.durationTicks ?? blockDuration
+        let durationMs = ticks.map { Int(Int64($0) * scale / 1_000_000) } ?? 0
+        let endMs = durationMs > 0 ? startMs + durationMs : startMs + 3000
+        return SubtitleCue(startMs: startMs, endMs: endMs, text: block.text)
+    }
+
     /// 沒有索引時：從頭掃描整個檔案（只讀元素標頭，影音資料直接跳過）
-    private static func cuesByScanning(in url: URL, track: EmbeddedSubtitleTrack) throws -> [SubtitleCue] {
+    private static func cuesByScanning(in url: URL, track: EmbeddedSubtitleTrack,
+                                       onPartial: (@Sendable ([SubtitleCue]) -> Void)?) throws -> [SubtitleCue] {
         let r = try EBMLReader(url: url)
         let segment = try r.openSegment()
         let segmentEnd = segment.end ?? r.fileSize
         var timecodeScale: UInt64 = 1_000_000   // 預設 1ms
         var raw: [(startMs: Int, durationMs: Int?, text: String)] = []
+        var clusterCount = 0
 
         while r.position < segmentEnd {
             try Task.checkCancellation()
@@ -222,6 +325,12 @@ enum MatroskaSubtitles {
                 r.seek(to: end)
             case ID.cluster:
                 try readCluster(r, el, track: track, scale: timecodeScale, segmentEnd: segmentEnd) { raw.append($0) }
+                clusterCount += 1
+                if clusterCount % 300 == 0, !raw.isEmpty, let onPartial {
+                    onPartial(raw.map { SubtitleCue(startMs: $0.startMs,
+                                                    endMs: $0.startMs + max($0.durationMs ?? 0, 2000),
+                                                    text: $0.text) })
+                }
             default:
                 guard let end = el.end else { break }
                 r.seek(to: end)
@@ -493,6 +602,14 @@ final class EBMLReader {
     deinit { try? handle.close() }
 
     func seek(to offset: UInt64) { position = offset }
+
+    /// 從目前位置一次讀入 length bytes：之後在這個範圍內的讀取都不必再碰磁碟或網路
+    func prefetch(_ length: Int) throws {
+        guard length > 0, position < fileSize else { return }
+        try handle.seek(toOffset: position)
+        buffer = try handle.read(upToCount: length) ?? Data()
+        bufferStart = position
+    }
 
     /// 確保緩衝裡有從 position 開始的 n bytes
     private func ensure(_ n: Int) throws -> Bool {
