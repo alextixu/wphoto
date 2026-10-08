@@ -66,3 +66,13 @@
 "TrackLanguage" = "%1$@（%2$@）";
 "FillScreen" = "填滿畫面";
 "FitScreen" = "完整顯示";
+
+/* 雙字幕 */
+"PrimarySubtitles" = "主字幕";
+"SecondarySubtitles" = "第二字幕";
+"SubtitlePosition" = "第二字幕位置";
+"PositionBottom" = "下方（主字幕上面）";
+"PositionTop" = "上方";
+"NoTextSubtitles" = "沒有可用的文字字幕";
+"LoadingSecondary" = "正在載入第二字幕…";
+"SecondaryFailed" = "無法讀取這個字幕";

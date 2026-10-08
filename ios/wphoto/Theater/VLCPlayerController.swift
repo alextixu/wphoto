@@ -39,7 +39,14 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
     /// App 在背景（鎖定畫面、切到其他 App）
     private(set) var isInBackground = false
 
-    private let player = VLCMediaPlayer()
+    /// 指定中文字型，否則中文字幕會顯示成方格（原因見 SubtitleFont）。
+    /// 帶選項建立時 VLCKit 會為這個播放器另開一個 libvlc（選項接在 VLCKit 預設選項之後）。
+    private let player: VLCMediaPlayer = {
+        if let family = SubtitleFont.vlcFamily {
+            return VLCMediaPlayer(options: ["--freetype-font=\(family)"])
+        }
+        return VLCMediaPlayer()
+    }()
     private var started = false
     private var tornDown = false
     /// 播完後重新開始時要跳到的位置（輸入串流建立後才能設定時間）
@@ -107,6 +114,19 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         if background, !tornDown, player.isPlaying {
             player.pause()
         }
+    }
+
+    // MARK: - 第二字幕用（由畫面直接讀取，不經過 @Published，避免每 0.1 秒重繪整個畫面）
+
+    /// 目前播放位置（毫秒），直接向 libvlc 讀取
+    var liveTimeMs: Int {
+        guard !tornDown else { return currentMs }
+        return Int(player.time.intValue)
+    }
+
+    /// 影片原始尺寸（還不知道時是 .zero）
+    var videoSize: CGSize {
+        tornDown ? .zero : player.videoSize
     }
 
     // MARK: - 播放控制

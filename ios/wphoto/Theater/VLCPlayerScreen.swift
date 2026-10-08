@@ -9,6 +9,7 @@ struct VLCPlayerScreen: View {
     let subtitles: [URL]
 
     @StateObject private var controller = VLCPlayerController()
+    @StateObject private var secondary = SecondarySubtitleModel()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var controlsVisible = true
@@ -33,6 +34,9 @@ struct VLCPlayerScreen: View {
 
             VLCVideoSurface(controller: controller, url: url, subtitles: subtitles)
                 .ignoresSafeArea()
+
+            // 第二字幕（App 自己畫；不攔截點擊）
+            SecondarySubtitleOverlay(model: secondary, controller: controller, controlsVisible: controlsVisible)
 
             // 點畫面空白處：顯示／隱藏控制列
             Color.clear
@@ -83,7 +87,11 @@ struct VLCPlayerScreen: View {
                 break
             }
         }
+        .task {
+            await secondary.configure(videoURL: url, subtitleFiles: subtitles)
+        }
         .onDisappear {
+            secondary.stop()
             controller.teardown()
             UIApplication.shared.isIdleTimerDisabled = false
         }
@@ -180,8 +188,9 @@ struct VLCPlayerScreen: View {
                 PlayerMenuButton(systemImage: "captions.bubble",
                                  menuTitle: String(localized: "Subtitles"),
                                  items: subtitleItems,
+                                 sectionTitles: subtitleSectionTitles,
                                  onSelect: { id in
-                                     controller.selectSubtitle(Int32(id))
+                                     handleSubtitleMenu(id)
                                      interaction += 1
                                  },
                                  onMenuVisibilityChange: { menuOpen = $0 })
@@ -278,7 +287,21 @@ struct VLCPlayerScreen: View {
         rate == rate.rounded() ? String(format: "%.1fx", rate) : String(format: "%gx", rate)
     }
 
+    /// 字幕選單的項目 id：主字幕用 libvlc 的軌道 id（-1 到數十），其他功能用不會重疊的大數字
+    private enum MenuID {
+        static let secondaryOff = 1_000_000
+        static let secondaryBase = 1_000_001      // + 第二字幕選項 id
+        static let positionTop = 2_000_000
+        static let positionBottom = 2_000_001
+        static let nothing = 3_000_000            // 停用的說明項目
+    }
+
+    private var subtitleSectionTitles: [String] {
+        [String(localized: "PrimarySubtitles"), String(localized: "SecondarySubtitles"), String(localized: "SubtitlePosition")]
+    }
+
     private var subtitleItems: [PlayerMenuItem] {
+        // 第 0 區：主字幕（VLC 顯示）
         let off = PlayerMenuItem(id: -1, title: String(localized: "SubtitlesOff"),
                                  isSelected: controller.currentSubtitle == -1)
         let tracks = controller.subtitleTracks.filter { $0.id != -1 }.enumerated().map { index, track in
@@ -286,7 +309,50 @@ struct VLCPlayerScreen: View {
                            title: trackTitle(track, index: index, format: "SubtitleTrack"),
                            isSelected: track.id == controller.currentSubtitle)
         }
-        return [off] + tracks
+
+        // 第 1 區：第二字幕（App 顯示）
+        var second: [PlayerMenuItem] = [
+            PlayerMenuItem(id: MenuID.secondaryOff, title: String(localized: "SubtitlesOff"),
+                           isSelected: secondary.selectedID == nil, section: 1)
+        ]
+        if secondary.options.isEmpty {
+            second.append(PlayerMenuItem(id: MenuID.nothing, title: String(localized: "NoTextSubtitles"),
+                                         isSelected: false, section: 1, isEnabled: false))
+        } else {
+            second += secondary.options.map { option in
+                PlayerMenuItem(id: MenuID.secondaryBase + option.id, title: option.title,
+                               isSelected: secondary.selectedID == option.id, section: 1)
+            }
+        }
+
+        // 第 2 區：第二字幕位置（開啟第二字幕時才顯示）
+        var position: [PlayerMenuItem] = []
+        if secondary.selectedID != nil {
+            position = [
+                PlayerMenuItem(id: MenuID.positionBottom, title: String(localized: "PositionBottom"),
+                               isSelected: secondary.position == .bottom, section: 2),
+                PlayerMenuItem(id: MenuID.positionTop, title: String(localized: "PositionTop"),
+                               isSelected: secondary.position == .top, section: 2),
+            ]
+        }
+        return [off] + tracks + second + position
+    }
+
+    private func handleSubtitleMenu(_ id: Int) {
+        switch id {
+        case MenuID.secondaryOff:
+            secondary.select(nil)
+        case MenuID.positionTop:
+            secondary.position = .top
+        case MenuID.positionBottom:
+            secondary.position = .bottom
+        case MenuID.nothing:
+            break
+        case MenuID.secondaryBase..<MenuID.positionTop:
+            secondary.select(id - MenuID.secondaryBase)
+        default:
+            controller.selectSubtitle(Int32(id))
+        }
     }
 
     /// 「關閉」軌 (-1) 會讓整部片靜音，不放進音軌選單
@@ -325,6 +391,86 @@ struct VLCPlayerScreen: View {
         try? await Task.sleep(for: .seconds(3))
         guard !Task.isCancelled else { return }
         withAnimation(.easeInOut(duration: 0.3)) { controlsVisible = false }
+    }
+}
+
+/// 第二字幕：依播放時間（每 0.1 秒讀一次 libvlc 的時間）畫在影片上，不攔截點擊。
+/// 用系統字型畫，中文不會變方格。位置以影片實際顯示範圍計算（完整顯示時扣掉上下黑邊）。
+struct SecondarySubtitleOverlay: View {
+    @ObservedObject var model: SecondarySubtitleModel
+    /// 不觀察：時間與畫面尺寸在 TimelineView 每次更新時直接讀取
+    let controller: VLCPlayerController
+    let controlsVisible: Bool
+
+    var body: some View {
+        GeometryReader { geo in
+            if let cues = model.cues {
+                TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                    let text = cues.text(at: controller.liveTimeMs)
+                    placed(geo: geo) {
+                        if !text.isEmpty {
+                            subtitleText(text, rect: videoRect(in: geo.size))
+                        }
+                    }
+                }
+            } else if model.isLoading || model.showsFailure {
+                placed(geo: geo) {
+                    HStack(spacing: 8) {
+                        if model.isLoading {
+                            ProgressView().tint(.white).controlSize(.small)
+                        }
+                        Text(model.isLoading ? "LoadingSecondary" : "SecondaryFailed")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.black.opacity(0.6), in: Capsule())
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+
+    private func subtitleText(_ text: String, rect: CGRect) -> some View {
+        Text(text)
+            .font(.system(size: max(15, min(30, rect.height * 0.05)), weight: .semibold))
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            // 四個方向的黑色描邊加一點陰影，亮的畫面上也看得清楚
+            .shadow(color: .black, radius: 0, x: 1, y: 1)
+            .shadow(color: .black, radius: 0, x: -1, y: -1)
+            .shadow(color: .black, radius: 0, x: 1, y: -1)
+            .shadow(color: .black, radius: 0, x: -1, y: 1)
+            .shadow(color: .black.opacity(0.7), radius: 3)
+    }
+
+    /// 放在影片範圍的上方或下方。下方位置預留主字幕（VLC 畫在影片底部）的高度，第二字幕疊在主字幕上面。
+    private func placed<Content: View>(geo: GeometryProxy, @ViewBuilder content: () -> Content) -> some View {
+        let rect = videoRect(in: geo.size)
+        let top = model.position == .top
+        let topPadding = max(rect.minY + rect.height * 0.04, max(geo.safeAreaInsets.top, 20) + (controlsVisible ? 60 : 8))
+        let bottomPadding = max(geo.size.height - rect.maxY + rect.height * 0.17, controlsVisible ? 130 : 12)
+        return VStack(spacing: 0) {
+            if !top { Spacer(minLength: 0) }
+            content()
+            if top { Spacer(minLength: 0) }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, top ? topPadding : 0)
+        .padding(.bottom, top ? 0 : bottomPadding)
+        .frame(width: geo.size.width, height: geo.size.height)
+    }
+
+    /// 影片實際顯示的範圍：填滿模式就是整個畫面；完整顯示時依影片比例置中
+    private func videoRect(in size: CGSize) -> CGRect {
+        let video = controller.videoSize
+        guard !controller.isFill, video.width > 0, video.height > 0, size.width > 0, size.height > 0 else {
+            return CGRect(origin: .zero, size: size)
+        }
+        let scale = min(size.width / video.width, size.height / video.height)
+        let w = video.width * scale, h = video.height * scale
+        return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
     }
 }
 
@@ -473,6 +619,9 @@ struct PlayerMenuItem: Equatable {
     let id: Int
     let title: String
     let isSelected: Bool
+    /// 屬於 sectionTitles 的第幾區（沒有分區時忽略）
+    var section: Int = 0
+    var isEnabled: Bool = true
 }
 
 /// 以 UIButton + UIMenu 做的選單按鈕：SwiftUI 的 Menu 無法得知選單是否開著，
@@ -482,6 +631,8 @@ struct PlayerMenuButton: UIViewRepresentable {
     var text: String? = nil
     let menuTitle: String
     let items: [PlayerMenuItem]
+    /// 有值時依 PlayerMenuItem.section 分區顯示（每區一個標題）
+    var sectionTitles: [String] = []
     let onSelect: (Int) -> Void
     let onMenuVisibilityChange: (Bool) -> Void
 
@@ -489,6 +640,7 @@ struct PlayerMenuButton: UIViewRepresentable {
         var onSelect: ((Int) -> Void)?
         var shownItems: [PlayerMenuItem]?
         var shownTitle: String?
+        var shownSections: [String]?
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -521,14 +673,29 @@ struct PlayerMenuButton: UIViewRepresentable {
             button.setTitle(text, for: .normal)
         }
         // 內容沒變就不重建選單（播放進度每秒更新多次）
-        guard items != coordinator.shownItems || menuTitle != coordinator.shownTitle else { return }
+        guard items != coordinator.shownItems || menuTitle != coordinator.shownTitle
+                || sectionTitles != coordinator.shownSections else { return }
         coordinator.shownItems = items
         coordinator.shownTitle = menuTitle
-        button.menu = UIMenu(title: menuTitle, children: items.map { item in
-            UIAction(title: item.title, state: item.isSelected ? .on : .off) { [weak coordinator] _ in
+        coordinator.shownSections = sectionTitles
+        let makeAction = { [weak coordinator] (item: PlayerMenuItem) -> UIAction in
+            UIAction(title: item.title,
+                     attributes: item.isEnabled ? [] : .disabled,
+                     state: item.isSelected ? .on : .off) { _ in
                 coordinator?.onSelect?(item.id)
             }
-        })
+        }
+        let children: [UIMenuElement]
+        if sectionTitles.isEmpty {
+            children = items.map(makeAction)
+        } else {
+            children = sectionTitles.indices.compactMap { section -> UIMenuElement? in
+                let actions = items.filter { $0.section == section }.map(makeAction)
+                guard !actions.isEmpty else { return nil }
+                return UIMenu(title: sectionTitles[section], options: .displayInline, children: actions)
+            }
+        }
+        button.menu = UIMenu(title: menuTitle, children: children)
     }
 }
 

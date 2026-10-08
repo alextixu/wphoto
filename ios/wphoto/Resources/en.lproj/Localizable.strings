@@ -66,3 +66,13 @@
 "TrackLanguage" = "%1$@ (%2$@)";
 "FillScreen" = "Fill Screen";
 "FitScreen" = "Fit to Screen";
+
+/* Dual subtitles */
+"PrimarySubtitles" = "Main Subtitle";
+"SecondarySubtitles" = "Second Subtitle";
+"SubtitlePosition" = "Second Subtitle Position";
+"PositionBottom" = "Bottom (above main subtitle)";
+"PositionTop" = "Top";
+"NoTextSubtitles" = "No text subtitles available";
+"LoadingSecondary" = "Loading second subtitle…";
+"SecondaryFailed" = "Couldn't read this subtitle";

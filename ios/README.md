@@ -23,6 +23,7 @@ Both modes pick a folder through the Files app — **iCloud Drive, On My iPhone,
 | Pinch-zoom, double-tap, swipe between photos | AVPlayer: native controls, 0.5×–2× speed, subtitle/audio tracks, PiP, AirPlay |
 | Shooting info sheet: camera, lens, ISO, shutter, aperture, focal length, GPS… | VLC player: scrubber, ±10 s, 0.5×–2× speed, subtitle / audio track menus, fit / fill, auto-hiding controls |
 | | External subtitles (`.srt` `.ass` `.ssa` `.sub` `.vtt`) next to the video or in a `Subs` / `Subtitles` folder |
+| | **Dual subtitles** (VLC player): a second subtitle from an external file or an embedded MKV text track, shown above the main one |
 
 ### Which player is used · 播放引擎怎麼選
 
@@ -40,6 +41,28 @@ Both modes pick a folder through the Files app — **iCloud Drive, On My iPhone,
 External subtitles are searched in the video's folder and a `Subs` or `Subtitles` subfolder (up to 15). Only a subtitle whose name starts with the video's name (e.g. `Show.E02.srt`, `Show.E02.zh-TW.srt`) is turned on automatically; the others — such as other episodes' subtitles — are only listed in the Subtitles menu (by file name when the app can tell which track is which file). Track names are shown in the app's language, e.g. "Subtitle 2 (Chinese)". Non-UTF-8 Chinese subtitles are decoded as Big5 (CP950) when the iPhone language is Traditional Chinese and as GB18030 when it is Simplified Chinese; UTF-8 files are always detected automatically.
 
 外掛字幕會在影片同資料夾與 `Subs`、`Subtitles` 子資料夾中尋找（最多 15 個）。只有檔名以影片檔名開頭的字幕（例如 `Show.E02.srt`、`Show.E02.zh-TW.srt`）會自動開啟；其他字幕（例如別集的）只列在字幕選單裡（能確定是哪個檔案時以檔名顯示）。軌道名稱以介面語言顯示，例如「字幕 2（中文）」。非 UTF-8 的中文字幕：系統語言為繁體中文時以 Big5（CP950）解碼、簡體中文時以 GB18030 解碼；UTF-8 字幕一律自動辨識。
+
+### Dual subtitles · 雙字幕
+
+In the VLC player, the Subtitles menu has three parts: **Main Subtitle** (drawn by VLC), **Second Subtitle**, and **Second Subtitle Position**. libVLC 3 can only show one subtitle at a time, so the second one is read and drawn by the app itself, in sync with playback:
+
+- Sources: external `.srt` / `.vtt` / `.ass` / `.ssa` files, and text subtitle tracks embedded in MKV/WebM (SRT, ASS/SSA, WebVTT — e.g. the many-language tracks in WEB-DL files). Image subtitles (PGS/VobSub) can't be used as the second subtitle.
+- Position: bottom (stacked above the main subtitle) or top.
+- The language you pick is remembered: the next episode turns on a second subtitle in the same language automatically.
+- An embedded track is read by scanning the MKV once (only element headers, video/audio data is skipped). A 2-hour 4K file takes a few seconds; "Loading second subtitle…" is shown meanwhile.
+
+VLC 播放畫面的字幕選單分成三區：**主字幕**（VLC 顯示）、**第二字幕**、**第二字幕位置**。libVLC 3 一次只能顯示一條字幕，所以第二條字幕由 App 自己讀取並跟著播放時間顯示：
+
+- 來源：外掛 `.srt` / `.vtt` / `.ass` / `.ssa`，以及 MKV／WebM 內嵌的文字字幕軌（SRT、ASS/SSA、WebVTT，例如 WEB-DL 檔內嵌的多國語言字幕）。圖片字幕（PGS／VobSub）無法當第二字幕。
+- 位置：下方（疊在主字幕上面）或上方。
+- 會記住選過的語言：下一集有同語言的字幕時自動開啟第二字幕。
+- 內嵌字幕要掃描一次 MKV（只讀元素標頭、跳過影音資料），2 小時的 4K 檔約需數秒，期間顯示「正在載入第二字幕…」。
+
+### Chinese characters in subtitles · 中文字幕字型
+
+libVLC 3's default subtitle font on Apple platforms is Helvetica Neue, which has no Chinese glyphs, and its automatic font fallback fails on iOS (it receives the hidden system font name ".PingFang SC", which doesn't match the name inside the font file), so Chinese showed as empty boxes. The app now tells VLC to use PingFang (PingFang TC, or PingFang SC when the app language is Simplified Chinese). Styled ASS/SSA subtitles are drawn by libass instead, which has no font setting in libVLC 3; if a styled ASS track still shows boxes, use it as the second subtitle (drawn by the app with the system font).
+
+libVLC 3 在 Apple 平台的預設字幕字型是 Helvetica Neue（沒有中文字），而且 iOS 上的自動替代字型會失敗（拿到隱藏的系統字型名稱「.PingFang SC」，跟字型檔裡的名稱對不上），所以中文會變成方格。現在 App 會指定 VLC 使用蘋方（PingFang TC；介面為簡體中文時用 PingFang SC）。帶特效的 ASS/SSA 字幕改由 libass 繪製，libVLC 3 沒有讓它換字型的設定；如果某條 ASS 字幕仍是方格，可以改選它當第二字幕（由 App 以系統字型顯示）。
 
 Limits of the VLC player: no HDR / Dolby Vision tone mapping (VLCKit 3 renders SDR), no Picture in Picture or AirPlay video, and no lock-screen controls — playback pauses when you lock the phone or switch apps.
 
