@@ -91,6 +91,26 @@ jobs:
           shoot ipad-13 "iPad Pro 13-inch (M4)"
           ls -la screenshots
 
+      # 試著在這台 Apple 晶片的 runner 上以「Designed for iPad」執行（等於 Mac 使用者從 Mac App Store 安裝的情況）。
+      # 沒有開發者帳號只能用暫時簽名，系統不一定肯執行；失敗不影響 .ipa 產出。
+      - name: Try launching on Apple silicon Mac (Designed for iPad)
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        working-directory: ios
+        run: |
+          xcodebuild -project wphoto.xcodeproj -scheme wphoto -configuration Debug \
+            -destination 'platform=macOS,variant=Designed for iPad' \
+            -derivedDataPath build-mac \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+            build -quiet
+          APP=$(find build-mac/Build/Products -maxdepth 2 -name wphoto.app -type d | head -1)
+          echo "built: $APP"
+          open "$APP"
+          sleep 15
+          mkdir -p screenshots
+          screencapture -x screenshots/mac-designed-for-ipad.png
+          if pgrep -x wphoto > /dev/null; then echo "wphoto is running on macOS"; else echo "::warning::wphoto did not stay running on macOS"; fi
+
       - name: Upload screenshots
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4

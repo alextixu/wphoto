@@ -28,6 +28,20 @@ struct PhotoDetailView: View {
             .ignoresSafeArea()
             .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { chromeHidden.toggle() } }
 
+            // 鍵盤快捷鍵（Mac、iPad 外接鍵盤）：左右方向鍵換張、Esc 關閉
+            ZStack {
+                Button("Back") { withAnimation { index = max(0, index - 1) } }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                Button("Next") { withAnimation { index = min(files.count - 1, index + 1) } }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+                Button("Close") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+
             if !chromeHidden {
                 HStack {
                     Button { dismiss() } label: {

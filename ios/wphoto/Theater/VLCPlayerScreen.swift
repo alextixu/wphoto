@@ -60,6 +60,8 @@ struct VLCPlayerScreen: View {
             if controller.hasError {
                 errorOverlay
             }
+
+            keyboardShortcuts
         }
         .statusBarHidden(!controlsVisible)
         .persistentSystemOverlays(controlsVisible ? .automatic : .hidden)
@@ -97,6 +99,26 @@ struct VLCPlayerScreen: View {
             controller.teardown()
             UIApplication.shared.isIdleTimerDisabled = false
         }
+    }
+
+    // MARK: - 鍵盤快捷鍵（Mac、iPad 外接鍵盤）
+
+    /// 放在一直存在的隱形按鈕上：控制列自動隱藏後快捷鍵仍然有效
+    private var keyboardShortcuts: some View {
+        ZStack {
+            Button("Play") { controller.togglePlay(); showControls() }
+                .keyboardShortcut(.space, modifiers: [])
+            Button("Back10") { controller.jump(seconds: -10); showControls() }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+            Button("Forward10") { controller.jump(seconds: 10); showControls() }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+            Button("Close") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     // MARK: - 控制列

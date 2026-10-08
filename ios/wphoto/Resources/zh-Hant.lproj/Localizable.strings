@@ -77,3 +77,5 @@
 "LoadingSubtitles" = "正在載入字幕…";
 "SubtitleFailed" = "無法讀取這個字幕";
 "VLCSubtitleTracks" = "其他字幕軌（由 VLC 顯示）";
+"Back" = "上一張";
+"Next" = "下一張";

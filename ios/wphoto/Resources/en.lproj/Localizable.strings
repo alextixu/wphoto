@@ -77,3 +77,5 @@
 "LoadingSubtitles" = "Loading subtitles…";
 "SubtitleFailed" = "Couldn't read this subtitle";
 "VLCSubtitleTracks" = "Other tracks (shown by VLC)";
+"Back" = "Previous";
+"Next" = "Next";

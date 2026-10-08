@@ -1,6 +1,7 @@
 # wphoto 上架 App Store 教學（不需要 Mac）
 
 整個流程：加入 Apple Developer Program → 產生憑證與描述檔 → 設定 GitHub Secrets → 執行 **iOS App Store upload** workflow → 在 App Store Connect 填資料、TestFlight 測試 → 送審。
+同一個上架流程也會讓 M 系列晶片的 Mac 可以從 Mac App Store 安裝（見第 11 節）。
 
 > 付款、登入 Apple 帳號、上傳憑證到 GitHub Secrets 都要你本人操作。下面的指令在 Windows 的 **Git Bash** 執行（Git Bash 內建 `openssl` 與 `base64`）。
 
@@ -102,6 +103,17 @@ App Store Connect → App → **App 資訊** 與 **iOS App 1.0**：
 | 審查備註 | 見 listing.md 的「給審查人員的說明」 |
 
 最後選擇建置版本 → **提交審查**（通常 1～3 天）。
+
+## 11. Mac 版（Apple 晶片的 Mac 直接執行 iPad 版）
+
+wphoto 不另外做 Mac 版：M 系列晶片的 Mac 可以直接執行 iPad 版，從 Mac App Store 安裝。
+
+1. App Store Connect → App → **定價與供應狀況** → **iPhone 與 iPad App 在 Apple 晶片 Mac 上的供應狀況**：確認是「**提供**」（預設就是提供；不要選「不提供」）。
+2. 送審前用 Mac 測試：在 M 系列 Mac 的 App Store 安裝 **TestFlight**，用同一個 Apple ID 登入，就能安裝 TestFlight 版的 wphoto。
+3. 要測的項目：從「檔案」選資料夾（Mac 上會出現 Finder 的選取視窗）、照片縮圖與放大、MKV 播放（VLC 播放器）、字幕與雙字幕、視窗縮放時的版面。
+4. 如果某項在 Mac 上不能用（例如 VLC 播放），可以先在這裡改成「不提供」，iPhone / iPad 版照常上架。
+
+> Intel Mac 無法執行 iPad App；要支援 Intel Mac 或要有完整的 Mac 選單與視窗體驗，就要另外做原生 Mac 版。
 
 ## 可能的審查問題
 

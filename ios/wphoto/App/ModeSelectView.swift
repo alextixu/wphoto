@@ -61,7 +61,8 @@ struct ModeCard: View {
                 .foregroundStyle(.white)
             Text(subtitle)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                // 不用 .secondary：放在 NavigationLink 裡會被染成強調色（藍色）
+                .foregroundStyle(Color(white: 0.6))
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
