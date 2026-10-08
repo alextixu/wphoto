@@ -9,7 +9,14 @@ struct TheaterModeView: View {
     /// 播放畫面關閉後 +1：剛下載完的影片重新檢查、補上封面與時長
     @State private var refreshToken = 0
 
-    private let columns = [GridItem(.adaptive(minimum: 160), spacing: 12)]
+    /// iPad（.regular）卡片放大、間距加寬
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    private var isLarge: Bool { sizeClass == .regular }
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: isLarge ? 260 : 160), spacing: isLarge ? 20 : 12)]
+    }
 
     var body: some View {
         ZStack {
@@ -26,13 +33,13 @@ struct TheaterModeView: View {
                 }
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
+                    LazyVGrid(columns: columns, spacing: isLarge ? 24 : 16) {
                         ForEach(session.files) { file in
                             EpisodeCard(file: file, refreshToken: refreshToken)
                                 .onTapGesture { playing = file }
                         }
                     }
-                    .padding(12)
+                    .padding(isLarge ? 20 : 12)
                 }
             }
         }

@@ -10,8 +10,13 @@ struct PhotoModeView: View {
 
     /// 格線間距：欄距、列距、外距都用同一個值，縮圖才會形成整齊的棋盤格
     private static let gridSpacing: CGFloat = 3
-    /// 自動依寬度決定欄數（每格至少 110pt）：iPhone 直向約 3 欄，橫向與 iPad 自動增加
-    private let columns = [GridItem(.adaptive(minimum: 110), spacing: PhotoModeView.gridSpacing)]
+    /// iPad（.regular）每格放大，避免 13 吋橫向一排塞十幾格小縮圖
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// 自動依寬度決定欄數：iPhone 每格至少 110pt（直向約 3 欄），iPad 至少 170pt
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: sizeClass == .regular ? 170 : 110), spacing: Self.gridSpacing)]
+    }
 
     private var availableTypes: [String] {
         Array(Set(session.files.map(\.typeLabel))).sorted()

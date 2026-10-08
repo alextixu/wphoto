@@ -1,6 +1,8 @@
 # iOS 版：在 GitHub 的 macOS runner 上用 Xcode 建置（Windows 上無法編譯 iOS）
 #  - push/PR：編譯檢查（模擬器）
-#  - 手動執行 (workflow_dispatch)：另外產出「未簽名 .ipa」供 Sideloadly 用自己的 Apple ID 簽名安裝
+#  - 手動執行 (workflow_dispatch)：另外產出「未簽名 .ipa」供 Sideloadly 用自己的 Apple ID 簽名安裝，
+#    以及 iPhone 6.9 吋／iPad 13 吋模擬器的啟動畫面截圖（檢查 iPad 版面）
+#  - 上架 App Store 用另一個 workflow：ios-appstore.yml
 name: iOS build
 
 on:
@@ -60,7 +62,43 @@ jobs:
           xcodebuild -project wphoto.xcodeproj -scheme wphoto \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -configuration Debug CODE_SIGNING_ALLOWED=NO \
-            build -quiet
+            -derivedDataPath build-sim build -quiet
+
+      # 截圖失敗（例如模擬器機型名稱改了）不影響 .ipa 產出
+      - name: Simulator screenshots (iPhone 6.9" / iPad 13")
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        working-directory: ios
+        run: |
+          APP=build-sim/Build/Products/Debug-iphonesimulator/wphoto.app
+          mkdir -p screenshots
+          shoot() {
+            name="$1"; type="$2"
+            udid=$(xcrun simctl create "shot-$name" "$type")
+            xcrun simctl boot "$udid"
+            xcrun simctl bootstatus "$udid" -b
+            xcrun simctl status_bar "$udid" override --time "9:41" --batteryState charged --batteryLevel 100 || true
+            xcrun simctl install "$udid" "$APP"
+            for lang in zh-Hant en; do
+              xcrun simctl terminate "$udid" com.lintaixu.wphoto || true
+              xcrun simctl launch "$udid" com.lintaixu.wphoto -AppleLanguages "($lang)"
+              sleep 8
+              xcrun simctl io "$udid" screenshot "screenshots/$name-$lang.png"
+            done
+            xcrun simctl shutdown "$udid" || true
+          }
+          shoot iphone-6.9 "iPhone 16 Pro Max"
+          shoot ipad-13 "iPad Pro 13-inch (M4)"
+          ls -la screenshots
+
+      - name: Upload screenshots
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wphoto-screenshots
+          path: ios/screenshots
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Build unsigned device app (for Sideloadly)
         if: github.event_name == 'workflow_dispatch'

@@ -98,6 +98,8 @@ Every push touching `ios/` is compiled on GitHub Actions (`.github/workflows/ios
 
 A free Apple ID allows 7-day sideloading; TestFlight / App Store distribution needs the Apple Developer Program.
 
+**App Store / TestFlight:** see [AppStore/README.md](AppStore/README.md) (no Mac needed — the **iOS App Store upload** workflow signs and uploads; store texts in three languages are in [AppStore/listing.md](AppStore/listing.md)). 上架教學見 [AppStore/README.md](AppStore/README.md)。
+
 - **有 Mac：** 用 Xcode 開啟專案，在 Signing & Capabilities 選自己的 Apple ID 後執行。
 - **沒有 Mac（Sideloadly）：** 在 GitHub 手動執行 **iOS build** workflow，下載 `wphoto-unsigned-ipa`（內含 MobileVLCKit），再用 Sideloadly 以自己的 Apple ID 簽名安裝。免費 Apple ID 每 7 天需重新安裝。
 

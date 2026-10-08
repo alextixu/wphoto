@@ -2,8 +2,12 @@ import SwiftUI
 
 /// 啟動畫面：選擇照片模式或看劇模式（與 Windows 版一致）
 struct ModeSelectView: View {
+    /// iPad（全螢幕或較寬的分割畫面）為 .regular：卡片放大、整體限制寬度並置中
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
     var body: some View {
-        NavigationStack {
+        let large = sizeClass == .regular
+        return NavigationStack {
             ZStack {
                 Color.wpBackground.ignoresSafeArea()
                 VStack(spacing: 28) {
@@ -18,14 +22,15 @@ struct ModeSelectView: View {
                         NavigationLink {
                             PhotoModeView()
                         } label: {
-                            ModeCard(icon: "photo.on.rectangle.angled", title: "PhotoMode", subtitle: "PhotoModeDesc")
+                            ModeCard(icon: "photo.on.rectangle.angled", title: "PhotoMode", subtitle: "PhotoModeDesc", large: large)
                         }
                         NavigationLink {
                             TheaterModeView()
                         } label: {
-                            ModeCard(icon: "film.stack", title: "VideoMode", subtitle: "VideoModeDesc")
+                            ModeCard(icon: "film.stack", title: "VideoMode", subtitle: "VideoModeDesc", large: large)
                         }
                     }
+                    .frame(maxWidth: large ? 680 : .infinity)
                     .padding(.horizontal, 20)
                     Text("FilesHint")
                         .font(.footnote)
@@ -44,14 +49,15 @@ struct ModeCard: View {
     let icon: String
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
+    var large = false
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: large ? 16 : 12) {
             Image(systemName: icon)
-                .font(.system(size: 44, weight: .regular))
+                .font(.system(size: large ? 60 : 44, weight: .regular))
                 .foregroundStyle(Color.wpAccent)
             Text(title)
-                .font(.headline)
+                .font(large ? .title3.weight(.semibold) : .headline)
                 .foregroundStyle(.white)
             Text(subtitle)
                 .font(.caption)
@@ -59,7 +65,7 @@ struct ModeCard: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 180)
+        .frame(height: large ? 240 : 180)
         .background(Color.wpCard)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }

@@ -43,6 +43,8 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         UIUserInterfaceStyle: Dark
         UIBackgroundModes: [audio]
+        # 只用系統提供的 HTTPS 等標準加密（實際上 App 不連網）：上傳 App Store 時不必再回答出口合規問題
+        ITSAppUsesNonExemptEncryption: false
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -50,6 +52,29 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         CODE_SIGN_STYLE: Automatic
         PRODUCT_BUNDLE_IDENTIFIER: com.lintaixu.wphoto
+        # 下面的建置腳本要改寫 App 裡的 MobileVLCKit，不能放在腳本沙盒裡
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    postBuildScripts:
+      # MobileVLCKit 官方 xcframework 的實機版含 armv7 / armv7s（32 位元）；iOS 17 只需要 arm64，
+      # App Store 會拒收不支援的架構。嵌入後瘦身成 arm64，有簽名身分時（上架建置）再重新簽名。
+      - name: Thin MobileVLCKit to arm64
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          if [ "$PLATFORM_NAME" != "iphoneos" ]; then exit 0; fi
+          FW_DIR="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/MobileVLCKit.framework"
+          FW="$FW_DIR/MobileVLCKit"
+          if [ ! -f "$FW" ]; then exit 0; fi
+          case "$(lipo -info "$FW")" in
+            "Architectures in the fat file"*)
+              lipo "$FW" -thin arm64 -output "$FW.arm64"
+              mv "$FW.arm64" "$FW"
+              echo "MobileVLCKit thinned to arm64"
+              if [ "$CODE_SIGNING_ALLOWED" = "YES" ] && [ -n "$EXPANDED_CODE_SIGN_IDENTITY" ]; then
+                codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --preserve-metadata=identifier,entitlements "$FW_DIR"
+              fi
+              ;;
+          esac
 schemes:
   wphoto:
     build:

@@ -495,7 +495,8 @@ struct SubtitleOverlay: View {
 
     private func subtitleText(_ text: String, rect: CGRect) -> some View {
         Text(text)
-            .font(.system(size: max(15, min(30, rect.height * 0.05)), weight: .semibold))
+            // 影片高度的 5%：iPhone 橫向約 20pt，13 吋 iPad 約 38pt
+            .font(.system(size: max(15, min(42, rect.height * 0.05)), weight: .semibold))
             .foregroundStyle(.white)
             .multilineTextAlignment(.center)
             // 四個方向的黑色描邊加一點陰影，亮的畫面上也看得清楚
