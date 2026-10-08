@@ -8,6 +8,10 @@ struct EmbeddedSubtitleTrack: Equatable, Sendable {
     /// 語言代碼：LanguageBCP47（例如 "zh-Hant"）優先，其次 ISO 639-2（例如 "chi"）
     let language: String
     let name: String?
+    /// FlagDefault（Matroska 規格的預設值是 1）
+    let isDefault: Bool
+    /// FlagForced（只在畫面出現外語時才顯示的字幕）
+    let isForced: Bool
     /// 0 = zlib、3 = 去標頭（header stripping）；nil = 沒有壓縮
     fileprivate let compressionAlgo: UInt64?
     fileprivate let compressionSettings: Data?
@@ -31,7 +35,8 @@ enum MatroskaSubtitles {
 
     // MARK: - 字幕軌清單（只讀到 Tracks 為止，很快）
 
-    static func textTracks(in url: URL) throws -> [EmbeddedSubtitleTrack] {
+    /// text = 可以由 App 顯示的文字字幕軌；otherCount = 圖片字幕（PGS、VobSub…）等只能交給 VLC 的字幕軌數量
+    static func subtitleTracks(in url: URL) throws -> (text: [EmbeddedSubtitleTrack], otherCount: Int) {
         let r = try EBMLReader(url: url)
         let segment = try r.openSegment()
         let segmentEnd = segment.end ?? r.fileSize
@@ -39,20 +44,162 @@ enum MatroskaSubtitles {
             guard let el = try r.readElementHeader() else { break }
             switch el.id {
             case ID.tracks:
-                return try parseTracks(r, el).filter { textCodecs.contains($0.codec) }
+                let all = try parseTracks(r, el)
+                let text = all.filter { textCodecs.contains($0.codec) }
+                return (text, all.count - text.count)
             case ID.cluster:
-                return []   // Tracks 應該在第一個 Cluster 之前；不是的話就不支援
+                return ([], 0)   // Tracks 應該在第一個 Cluster 之前；不是的話就不支援
             default:
-                guard let end = el.end else { return [] }
+                guard let end = el.end else { return ([], 0) }
                 r.seek(to: end)
             }
         }
-        return []
+        return ([], 0)
     }
 
-    // MARK: - 取出某一軌的所有字幕（掃描整個檔案，可取消）
+    // MARK: - 取出某一軌的所有字幕（可取消）
 
+    /// 先用 Cues 索引直接跳到每一句字幕（mkvmerge 會替字幕軌的每個區塊建索引，18 GB 的電影也只要讀幾千次）；
+    /// 索引裡沒有這一軌時才從頭掃描整個檔案。
     static func cues(in url: URL, track: EmbeddedSubtitleTrack) throws -> [SubtitleCue] {
+        if let indexed = try cuesFromIndex(in: url, track: track), !indexed.isEmpty {
+            return indexed
+        }
+        return try cuesByScanning(in: url, track: track)
+    }
+
+    private struct CueEntry {
+        let timeTicks: UInt64
+        let clusterPosition: UInt64
+        let relativePosition: UInt64
+        let durationTicks: UInt64?
+    }
+
+    /// 用 Cues 索引取字幕；索引不存在或沒有這一軌的項目時回傳 nil
+    private static func cuesFromIndex(in url: URL, track: EmbeddedSubtitleTrack) throws -> [SubtitleCue]? {
+        let r = try EBMLReader(url: url)
+        let segment = try r.openSegment()
+        let segmentDataStart = segment.dataStart
+        let segmentEnd = segment.end ?? r.fileSize
+        var timecodeScale: UInt64 = 1_000_000
+        var cuesPosition: UInt64?
+
+        // 1) 第一個 Cluster 之前：讀 Info（時間單位）與 SeekHead（Cues 在哪裡）
+        topLevel: while r.position < segmentEnd {
+            let headerStart = r.position
+            guard let el = try r.readElementHeader(), let end = el.end else { break }
+            switch el.id {
+            case ID.info:
+                while r.position < end {
+                    guard let child = try r.readElementHeader(), let childEnd = child.end else { break }
+                    if child.id == ID.timecodeScale, let size = child.size {
+                        timecodeScale = try r.readUInt(size) ?? timecodeScale
+                    }
+                    r.seek(to: childEnd)
+                }
+            case ID.seekHead:
+                while r.position < end {
+                    guard let seek = try r.readElementHeader(), let seekEnd = seek.end else { break }
+                    var seekID: UInt64?, seekPosition: UInt64?
+                    while r.position < seekEnd {
+                        guard let child = try r.readElementHeader(), let childEnd = child.end, let size = child.size else { break }
+                        if child.id == ID.seekID { seekID = try r.readUInt(size) }
+                        if child.id == ID.seekPosition { seekPosition = try r.readUInt(size) }
+                        r.seek(to: childEnd)
+                    }
+                    if seekID == UInt64(ID.cues), let pos = seekPosition, cuesPosition == nil {
+                        cuesPosition = segmentDataStart + pos
+                    }
+                    r.seek(to: seekEnd)
+                }
+            case ID.cues:
+                cuesPosition = headerStart
+            case ID.cluster:
+                break topLevel
+            default:
+                break
+            }
+            r.seek(to: end)
+        }
+        guard let cuesStart = cuesPosition else { return nil }
+
+        // 2) 讀 Cues：只留這一軌、有 CueRelativePosition 的項目
+        r.seek(to: cuesStart)
+        guard let cuesEl = try r.readElementHeader(), cuesEl.id == ID.cues, let cuesEnd = cuesEl.end else { return nil }
+        var entries: [CueEntry] = []
+        while r.position < cuesEnd {
+            try Task.checkCancellation()
+            guard let point = try r.readElementHeader(), let pointEnd = point.end else { break }
+            var time: UInt64?
+            while r.position < pointEnd {
+                guard let child = try r.readElementHeader(), let childEnd = child.end, let size = child.size else { break }
+                if child.id == ID.cueTime {
+                    time = try r.readUInt(size)
+                } else if child.id == ID.cueTrackPositions, let time {
+                    var cueTrack: UInt64?, cluster: UInt64?, relative: UInt64?, duration: UInt64?
+                    while r.position < childEnd {
+                        guard let x = try r.readElementHeader(), let xEnd = x.end, let xSize = x.size else { break }
+                        switch x.id {
+                        case ID.cueTrack: cueTrack = try r.readUInt(xSize)
+                        case ID.cueClusterPosition: cluster = try r.readUInt(xSize)
+                        case ID.cueRelativePosition: relative = try r.readUInt(xSize)
+                        case ID.cueDuration: duration = try r.readUInt(xSize)
+                        default: break
+                        }
+                        r.seek(to: xEnd)
+                    }
+                    if cueTrack == track.number, let cluster, let relative {
+                        entries.append(CueEntry(timeTicks: time, clusterPosition: cluster,
+                                                relativePosition: relative, durationTicks: duration))
+                    }
+                }
+                r.seek(to: childEnd)
+            }
+            r.seek(to: pointEnd)
+        }
+        guard !entries.isEmpty else { return nil }
+
+        // 3) 依索引直接讀每一句（同一個 Cluster 的資料起點只算一次）
+        var clusterDataStart: [UInt64: UInt64] = [:]
+        var cues: [SubtitleCue] = []
+        for (i, entry) in entries.enumerated() {
+            if i % 64 == 0 { try Task.checkCancellation() }
+            let dataStart: UInt64
+            if let known = clusterDataStart[entry.clusterPosition] {
+                dataStart = known
+            } else {
+                r.seek(to: segmentDataStart + entry.clusterPosition)
+                guard let cluster = try r.readElementHeader(), cluster.id == ID.cluster else { continue }
+                dataStart = cluster.dataStart
+                clusterDataStart[entry.clusterPosition] = dataStart
+            }
+            r.seek(to: dataStart + entry.relativePosition)
+            guard let el = try r.readElementHeader(), let elEnd = el.end else { continue }
+            var block: (relTime: Int16, text: String)?
+            var blockDuration: UInt64?
+            if el.id == ID.simpleBlock {
+                block = try readBlock(r, end: elEnd, track: track)
+            } else if el.id == ID.blockGroup {
+                while r.position < elEnd {
+                    guard let child = try r.readElementHeader(), let childEnd = child.end, let size = child.size else { break }
+                    if child.id == ID.block { block = try readBlock(r, end: childEnd, track: track) }
+                    if child.id == ID.blockDuration { blockDuration = try r.readUInt(size) }
+                    r.seek(to: childEnd)
+                }
+            }
+            guard let block else { continue }
+            // CueTime 就是這個區塊的絕對時間
+            let startMs = Int(Int64(entry.timeTicks) * Int64(timecodeScale) / 1_000_000)
+            let ticks = entry.durationTicks ?? blockDuration
+            let durationMs = ticks.map { Int(Int64($0) * Int64(timecodeScale) / 1_000_000) } ?? 0
+            let endMs = durationMs > 0 ? startMs + durationMs : startMs + 3000
+            cues.append(SubtitleCue(startMs: startMs, endMs: endMs, text: block.text))
+        }
+        return cues
+    }
+
+    /// 沒有索引時：從頭掃描整個檔案（只讀元素標頭，影音資料直接跳過）
+    private static func cuesByScanning(in url: URL, track: EmbeddedSubtitleTrack) throws -> [SubtitleCue] {
         let r = try EBMLReader(url: url)
         let segment = try r.openSegment()
         let segmentEnd = segment.end ?? r.fileSize
@@ -103,6 +250,16 @@ enum MatroskaSubtitles {
         static let ebml: UInt32 = 0x1A45DFA3
         static let segment: UInt32 = 0x18538067
         static let seekHead: UInt32 = 0x114D9B74
+        static let seekID: UInt32 = 0x53AB
+        static let seekPosition: UInt32 = 0x53AC
+        static let cueTime: UInt32 = 0xB3
+        static let cueTrackPositions: UInt32 = 0xB7
+        static let cueTrack: UInt32 = 0xF7
+        static let cueClusterPosition: UInt32 = 0xF1
+        static let cueRelativePosition: UInt32 = 0xF0
+        static let cueDuration: UInt32 = 0xB2
+        static let flagDefault: UInt32 = 0x88
+        static let flagForced: UInt32 = 0x55AA
         static let info: UInt32 = 0x1549A966
         static let timecodeScale: UInt32 = 0x2AD7B1
         static let tracks: UInt32 = 0x1654AE6B
@@ -146,6 +303,7 @@ enum MatroskaSubtitles {
             var codec = "", language = "eng", languageBCP47: String?, name: String?
             var encodingType: UInt64 = 0, compAlgo: UInt64?, compSettings: Data?
             var hasEncoding = false
+            var isDefault = true, isForced = false   // Matroska 規格的預設值
             while r.position < entryEnd {
                 guard let child = try r.readElementHeader(), let childEnd = child.end, let size = child.size else { break }
                 switch child.id {
@@ -155,6 +313,8 @@ enum MatroskaSubtitles {
                 case ID.language: language = try r.readString(size)
                 case ID.languageBCP47: languageBCP47 = try r.readString(size)
                 case ID.name: name = try r.readString(size)
+                case ID.flagDefault: isDefault = (try r.readUInt(size) ?? 1) != 0
+                case ID.flagForced: isForced = (try r.readUInt(size) ?? 0) != 0
                 case ID.contentEncodings:
                     // ContentEncodings → ContentEncoding → (ContentEncodingType, ContentCompression → Algo / Settings)
                     while r.position < childEnd {
@@ -196,6 +356,8 @@ enum MatroskaSubtitles {
                 codec: codec,
                 language: (trimmedBCP47?.isEmpty == false ? trimmedBCP47! : language),
                 name: name?.isEmpty == false ? name : nil,
+                isDefault: isDefault,
+                isForced: isForced,
                 compressionAlgo: hasEncoding ? compAlgo : nil,
                 compressionSettings: compSettings))
         }

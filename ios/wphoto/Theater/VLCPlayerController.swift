@@ -39,14 +39,10 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
     /// App 在背景（鎖定畫面、切到其他 App）
     private(set) var isInBackground = false
 
-    /// 指定中文字型，否則中文字幕會顯示成方格（原因見 SubtitleFont）。
-    /// 帶選項建立時 VLCKit 會為這個播放器另開一個 libvlc（選項接在 VLCKit 預設選項之後）。
-    private let player: VLCMediaPlayer = {
-        if let family = SubtitleFont.vlcFamily {
-            return VLCMediaPlayer(options: ["--freetype-font=\(family)"])
-        }
-        return VLCMediaPlayer()
-    }()
+    private let player = VLCMediaPlayer()
+    /// VLC 自己的字幕預設關閉：文字字幕由 App 顯示（見 SubtitleModel）；
+    /// 使用者在選單選了 VLC 的字幕軌（圖片字幕等）才開啟
+    private var vlcSubtitlesEnabled = false
     private var started = false
     private var tornDown = false
     /// 播完後重新開始時要跳到的位置（輸入串流建立後才能設定時間）
@@ -90,7 +86,8 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         started = true
         videoURL = url
         subtitleFiles = subtitles
-        defaultSubtitle = subtitles.first { SubtitleFinder.matches($0, video: url) }
+        // 交給 VLC 的外掛字幕只剩 App 讀不了的格式（.sub），不自動開啟，要使用者自己選
+        defaultSubtitle = nil
         player.drawable = drawable
         player.media = makeMedia(url: url)
         // 外掛字幕等開始播放後才加（見 addSubtitlesIfNeeded）
@@ -161,7 +158,18 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         rate = newRate
     }
 
+    /// 主字幕改由 App 顯示（或關閉）：關掉 VLC 的字幕
+    func disableVLCSubtitles() {
+        vlcSubtitlesEnabled = false
+        userSubtitle = SubtitleChoice(id: -1, file: nil)
+        pendingSubtitleRestore = nil
+        guard !tornDown else { return }
+        player.currentVideoSubTitleIndex = -1
+        currentSubtitle = -1
+    }
+
     func selectSubtitle(_ id: Int32) {
+        vlcSubtitlesEnabled = id != -1
         player.currentVideoSubTitleIndex = id
         currentSubtitle = id
         userSubtitle = SubtitleChoice(id: id, file: subtitleFileByID[id])
@@ -294,9 +302,13 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         mapAddedSubtitles(ids: subIDs)
         let subs = Self.tracks(ids: subIDs, names: player.videoSubTitlesNames, files: subtitleFileByID)
         if subs != subtitleTracks { subtitleTracks = subs }
+        // VLC 會自動選預設字幕軌（或強制字幕）；文字字幕由 App 顯示時一律關掉
+        if !vlcSubtitlesEnabled && player.currentVideoSubTitleIndex != -1 {
+            player.currentVideoSubTitleIndex = -1
+        }
         let sub = player.currentVideoSubTitleIndex
         if sub != currentSubtitle { currentSubtitle = sub }
-        restoreSubtitleIfNeeded(ids: subIDs)
+        if vlcSubtitlesEnabled { restoreSubtitleIfNeeded(ids: subIDs) }
 
         let audioIDs = Self.trackIDs(player.audioTrackIndexes)
         let audio = Self.tracks(ids: audioIDs, names: player.audioTrackNames, files: [:])

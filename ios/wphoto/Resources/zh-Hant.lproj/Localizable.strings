@@ -74,5 +74,6 @@
 "PositionBottom" = "下方（主字幕上面）";
 "PositionTop" = "上方";
 "NoTextSubtitles" = "沒有可用的文字字幕";
-"LoadingSecondary" = "正在載入第二字幕…";
-"SecondaryFailed" = "無法讀取這個字幕";
+"LoadingSubtitles" = "正在載入字幕…";
+"SubtitleFailed" = "無法讀取這個字幕";
+"VLCSubtitleTracks" = "其他字幕軌（由 VLC 顯示）";

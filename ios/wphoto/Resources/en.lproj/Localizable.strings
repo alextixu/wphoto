@@ -74,5 +74,6 @@
 "PositionBottom" = "Bottom (above main subtitle)";
 "PositionTop" = "Top";
 "NoTextSubtitles" = "No text subtitles available";
-"LoadingSecondary" = "Loading second subtitle…";
-"SecondaryFailed" = "Couldn't read this subtitle";
+"LoadingSubtitles" = "Loading subtitles…";
+"SubtitleFailed" = "Couldn't read this subtitle";
+"VLCSubtitleTracks" = "Other tracks (shown by VLC)";

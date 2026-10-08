@@ -23,7 +23,7 @@ Both modes pick a folder through the Files app — **iCloud Drive, On My iPhone,
 | Pinch-zoom, double-tap, swipe between photos | AVPlayer: native controls, 0.5×–2× speed, subtitle/audio tracks, PiP, AirPlay |
 | Shooting info sheet: camera, lens, ISO, shutter, aperture, focal length, GPS… | VLC player: scrubber, ±10 s, 0.5×–2× speed, subtitle / audio track menus, fit / fill, auto-hiding controls |
 | | External subtitles (`.srt` `.ass` `.ssa` `.sub` `.vtt`) next to the video or in a `Subs` / `Subtitles` folder |
-| | **Dual subtitles** (VLC player): a second subtitle from an external file or an embedded MKV text track, shown above the main one |
+| | **Dual subtitles** (VLC player): main + second subtitle drawn by the app (no Chinese box glyphs), from external files or embedded MKV text tracks |
 
 ### Which player is used · 播放引擎怎麼選
 
@@ -42,27 +42,25 @@ External subtitles are searched in the video's folder and a `Subs` or `Subtitles
 
 外掛字幕會在影片同資料夾與 `Subs`、`Subtitles` 子資料夾中尋找（最多 15 個）。只有檔名以影片檔名開頭的字幕（例如 `Show.E02.srt`、`Show.E02.zh-TW.srt`）會自動開啟；其他字幕（例如別集的）只列在字幕選單裡（能確定是哪個檔案時以檔名顯示）。軌道名稱以介面語言顯示，例如「字幕 2（中文）」。非 UTF-8 的中文字幕：系統語言為繁體中文時以 Big5（CP950）解碼、簡體中文時以 GB18030 解碼；UTF-8 字幕一律自動辨識。
 
-### Dual subtitles · 雙字幕
+### Subtitles in the VLC player · VLC 播放器的字幕
 
-In the VLC player, the Subtitles menu has three parts: **Main Subtitle** (drawn by VLC), **Second Subtitle**, and **Second Subtitle Position**. libVLC 3 can only show one subtitle at a time, so the second one is read and drawn by the app itself, in sync with playback:
+Text subtitles — external `.srt` / `.vtt` / `.ass` / `.ssa` files and text tracks embedded in MKV/WebM (SRT, ASS/SSA, WebVTT) — are read and drawn by the app itself with the iOS system font. libVLC 3 can't render Chinese on iOS: its default font (Helvetica Neue) has no Chinese glyphs, its automatic fallback fails (iOS hands it the hidden name ".PingFang SC", which doesn't match the name inside the font file), and forcing a Chinese font makes VLC's text renderer fail to load so no subtitles appear at all. VLC only draws what the app can't read: image subtitles (PGS, VobSub, DVB), subtitles embedded in MP4/TS/AVI, and `.sub` files — listed under "Other tracks (shown by VLC)".
 
-- Sources: external `.srt` / `.vtt` / `.ass` / `.ssa` files, and text subtitle tracks embedded in MKV/WebM (SRT, ASS/SSA, WebVTT — e.g. the many-language tracks in WEB-DL files). Image subtitles (PGS/VobSub) can't be used as the second subtitle.
-- Position: bottom (stacked above the main subtitle) or top.
-- The language you pick is remembered: the next episode turns on a second subtitle in the same language automatically.
-- An embedded track is read by scanning the MKV once (only element headers, video/audio data is skipped). A 2-hour 4K file takes a few seconds; "Loading second subtitle…" is shown meanwhile.
+The Subtitles menu: **Main Subtitle**, **Other tracks (shown by VLC)** (only when there are any), **Second Subtitle**, **Second Subtitle Position**.
 
-VLC 播放畫面的字幕選單分成三區：**主字幕**（VLC 顯示）、**第二字幕**、**第二字幕位置**。libVLC 3 一次只能顯示一條字幕，所以第二條字幕由 App 自己讀取並跟著播放時間顯示：
+- Dual subtitles: pick a second subtitle; it is stacked above the main one (or placed at the top).
+- Main subtitle is chosen automatically: the language you picked last time → a subtitle file named after the video → the app's language when it is Chinese → a track flagged default. The second subtitle language is remembered too.
+- Embedded tracks are read through the MKV's Cues index (mkvmerge indexes every subtitle block), so even an 18 GB 4K film loads its subtitles in about a second. Files without that index are scanned once (only element headers).
+- Image subtitles can't be the second subtitle.
 
-- 來源：外掛 `.srt` / `.vtt` / `.ass` / `.ssa`，以及 MKV／WebM 內嵌的文字字幕軌（SRT、ASS/SSA、WebVTT，例如 WEB-DL 檔內嵌的多國語言字幕）。圖片字幕（PGS／VobSub）無法當第二字幕。
-- 位置：下方（疊在主字幕上面）或上方。
-- 會記住選過的語言：下一集有同語言的字幕時自動開啟第二字幕。
-- 內嵌字幕要掃描一次 MKV（只讀元素標頭、跳過影音資料），2 小時的 4K 檔約需數秒，期間顯示「正在載入第二字幕…」。
+文字字幕——外掛 `.srt` / `.vtt` / `.ass` / `.ssa`，以及 MKV／WebM 內嵌的文字軌（SRT、ASS/SSA、WebVTT）——都由 App 自己讀取，並用 iOS 系統字型顯示。libVLC 3 在 iOS 上無法顯示中文：預設字型 Helvetica Neue 沒有中文字，自動替代字型會失敗（iOS 給的是隱藏名稱「.PingFang SC」，跟字型檔裡的名稱對不上），而強制指定中文字型會讓 VLC 的文字渲染器載入失敗、字幕全部消失。VLC 只負責 App 讀不了的字幕：圖片字幕（PGS、VobSub、DVB）、MP4／TS／AVI 內嵌字幕與 `.sub` 檔，列在「其他字幕軌（由 VLC 顯示）」。
 
-### Chinese characters in subtitles · 中文字幕字型
+字幕選單：**主字幕**、**其他字幕軌（由 VLC 顯示）**（有的時候才出現）、**第二字幕**、**第二字幕位置**。
 
-libVLC 3's default subtitle font on Apple platforms is Helvetica Neue, which has no Chinese glyphs, and its automatic font fallback fails on iOS (it receives the hidden system font name ".PingFang SC", which doesn't match the name inside the font file), so Chinese showed as empty boxes. The app now tells VLC to use PingFang (PingFang TC, or PingFang SC when the app language is Simplified Chinese). Styled ASS/SSA subtitles are drawn by libass instead, which has no font setting in libVLC 3; if a styled ASS track still shows boxes, use it as the second subtitle (drawn by the app with the system font).
-
-libVLC 3 在 Apple 平台的預設字幕字型是 Helvetica Neue（沒有中文字），而且 iOS 上的自動替代字型會失敗（拿到隱藏的系統字型名稱「.PingFang SC」，跟字型檔裡的名稱對不上），所以中文會變成方格。現在 App 會指定 VLC 使用蘋方（PingFang TC；介面為簡體中文時用 PingFang SC）。帶特效的 ASS/SSA 字幕改由 libass 繪製，libVLC 3 沒有讓它換字型的設定；如果某條 ASS 字幕仍是方格，可以改選它當第二字幕（由 App 以系統字型顯示）。
+- 雙字幕：選一條第二字幕，會疊在主字幕上面（或放在上方）。
+- 主字幕自動選擇：上次選的語言 → 檔名對得上的外掛字幕 → 介面語言為中文時選同語言 → 標記為預設的字幕軌。第二字幕的語言也會記住。
+- 內嵌字幕透過 MKV 的 Cues 索引直接讀取（mkvmerge 會替每個字幕區塊建索引），18 GB 的 4K 電影約一秒內載入；沒有索引的檔案才掃描一次（只讀元素標頭）。
+- 圖片字幕無法當第二字幕。
 
 Limits of the VLC player: no HDR / Dolby Vision tone mapping (VLCKit 3 renders SDR), no Picture in Picture or AirPlay video, and no lock-screen controls — playback pauses when you lock the phone or switch apps.
 

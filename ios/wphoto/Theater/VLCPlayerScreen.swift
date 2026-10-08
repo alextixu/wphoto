@@ -9,7 +9,7 @@ struct VLCPlayerScreen: View {
     let subtitles: [URL]
 
     @StateObject private var controller = VLCPlayerController()
-    @StateObject private var secondary = SecondarySubtitleModel()
+    @StateObject private var subtitleModel = SubtitleModel()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var controlsVisible = true
@@ -32,11 +32,13 @@ struct VLCPlayerScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VLCVideoSurface(controller: controller, url: url, subtitles: subtitles)
+            // 文字字幕由 App 顯示；VLC 只拿到它自己才讀得了的外掛字幕（.sub）
+            VLCVideoSurface(controller: controller, url: url,
+                            subtitles: subtitles.filter { !SubtitleFileParser.canParse($0) })
                 .ignoresSafeArea()
 
-            // 第二字幕（App 自己畫；不攔截點擊）
-            SecondarySubtitleOverlay(model: secondary, controller: controller, controlsVisible: controlsVisible)
+            // 主字幕與第二字幕（App 用系統字型畫，中文不會變方格；不攔截點擊）
+            SubtitleOverlay(model: subtitleModel, controller: controller, controlsVisible: controlsVisible)
 
             // 點畫面空白處：顯示／隱藏控制列
             Color.clear
@@ -88,10 +90,10 @@ struct VLCPlayerScreen: View {
             }
         }
         .task {
-            await secondary.configure(videoURL: url, subtitleFiles: subtitles)
+            await subtitleModel.configure(videoURL: url, subtitleFiles: subtitles)
         }
         .onDisappear {
-            secondary.stop()
+            subtitleModel.stop()
             controller.teardown()
             UIApplication.shared.isIdleTimerDisabled = false
         }
@@ -287,70 +289,95 @@ struct VLCPlayerScreen: View {
         rate == rate.rounded() ? String(format: "%.1fx", rate) : String(format: "%gx", rate)
     }
 
-    /// 字幕選單的項目 id：主字幕用 libvlc 的軌道 id（-1 到數十），其他功能用不會重疊的大數字
+    /// 字幕選單的項目 id：VLC 字幕軌用 libvlc 的軌道 id（0 到數十），其他功能用不會重疊的大數字
     private enum MenuID {
-        static let secondaryOff = 1_000_000
-        static let secondaryBase = 1_000_001      // + 第二字幕選項 id
-        static let positionTop = 2_000_000
-        static let positionBottom = 2_000_001
-        static let nothing = 3_000_000            // 停用的說明項目
+        static let mainOff = 1_000_000
+        static let mainBase = 1_100_000           // + 字幕選項 id
+        static let secondOff = 2_000_000
+        static let secondBase = 2_100_000         // + 字幕選項 id
+        static let positionTop = 3_000_000
+        static let positionBottom = 3_000_001
+        static let nothing = 4_000_000            // 停用的說明項目
+    }
+
+    private enum MenuSection: Int {
+        case main, vlc, second, position
     }
 
     private var subtitleSectionTitles: [String] {
-        [String(localized: "PrimarySubtitles"), String(localized: "SecondarySubtitles"), String(localized: "SubtitlePosition")]
+        [String(localized: "PrimarySubtitles"), String(localized: "VLCSubtitleTracks"),
+         String(localized: "SecondarySubtitles"), String(localized: "SubtitlePosition")]
     }
 
     private var subtitleItems: [PlayerMenuItem] {
-        // 第 0 區：主字幕（VLC 顯示）
-        let off = PlayerMenuItem(id: -1, title: String(localized: "SubtitlesOff"),
-                                 isSelected: controller.currentSubtitle == -1)
-        let tracks = controller.subtitleTracks.filter { $0.id != -1 }.enumerated().map { index, track in
-            PlayerMenuItem(id: Int(track.id),
-                           title: trackTitle(track, index: index, format: "SubtitleTrack"),
-                           isSelected: track.id == controller.currentSubtitle)
+        let model = subtitleModel
+        var items: [PlayerMenuItem] = []
+
+        // 主字幕（App 顯示）
+        let vlcShowing = controller.currentSubtitle != -1
+        items.append(PlayerMenuItem(id: MenuID.mainOff, title: String(localized: "SubtitlesOff"),
+                                    isSelected: model.mainID == nil && !vlcShowing,
+                                    section: MenuSection.main.rawValue))
+        items += model.options.map { option in
+            PlayerMenuItem(id: MenuID.mainBase + option.id, title: option.title,
+                           isSelected: model.mainID == option.id, section: MenuSection.main.rawValue)
         }
 
-        // 第 1 區：第二字幕（App 顯示）
-        var second: [PlayerMenuItem] = [
-            PlayerMenuItem(id: MenuID.secondaryOff, title: String(localized: "SubtitlesOff"),
-                           isSelected: secondary.selectedID == nil, section: 1)
-        ]
-        if secondary.options.isEmpty {
-            second.append(PlayerMenuItem(id: MenuID.nothing, title: String(localized: "NoTextSubtitles"),
-                                         isSelected: false, section: 1, isEnabled: false))
-        } else {
-            second += secondary.options.map { option in
-                PlayerMenuItem(id: MenuID.secondaryBase + option.id, title: option.title,
-                               isSelected: secondary.selectedID == option.id, section: 1)
+        // VLC 自己的字幕軌（圖片字幕、MP4 / TS 內嵌字幕等 App 讀不了的）
+        if model.needsVLCTracks {
+            let vlcTracks = controller.subtitleTracks.filter { $0.id != -1 }
+            items += vlcTracks.enumerated().map { index, track in
+                PlayerMenuItem(id: Int(track.id),
+                               title: trackTitle(track, index: index, format: "SubtitleTrack"),
+                               isSelected: model.mainID == nil && track.id == controller.currentSubtitle,
+                               section: MenuSection.vlc.rawValue)
             }
         }
 
-        // 第 2 區：第二字幕位置（開啟第二字幕時才顯示）
-        var position: [PlayerMenuItem] = []
-        if secondary.selectedID != nil {
-            position = [
-                PlayerMenuItem(id: MenuID.positionBottom, title: String(localized: "PositionBottom"),
-                               isSelected: secondary.position == .bottom, section: 2),
-                PlayerMenuItem(id: MenuID.positionTop, title: String(localized: "PositionTop"),
-                               isSelected: secondary.position == .top, section: 2),
-            ]
+        // 第二字幕（App 顯示）
+        items.append(PlayerMenuItem(id: MenuID.secondOff, title: String(localized: "SubtitlesOff"),
+                                    isSelected: model.secondID == nil, section: MenuSection.second.rawValue))
+        if model.options.isEmpty {
+            items.append(PlayerMenuItem(id: MenuID.nothing, title: String(localized: "NoTextSubtitles"),
+                                        isSelected: false, section: MenuSection.second.rawValue, isEnabled: false))
+        } else {
+            items += model.options.map { option in
+                PlayerMenuItem(id: MenuID.secondBase + option.id, title: option.title,
+                               isSelected: model.secondID == option.id, section: MenuSection.second.rawValue)
+            }
         }
-        return [off] + tracks + second + position
+
+        // 第二字幕位置（開啟第二字幕時才顯示）
+        if model.secondID != nil {
+            items.append(PlayerMenuItem(id: MenuID.positionBottom, title: String(localized: "PositionBottom"),
+                                        isSelected: model.position == .bottom, section: MenuSection.position.rawValue))
+            items.append(PlayerMenuItem(id: MenuID.positionTop, title: String(localized: "PositionTop"),
+                                        isSelected: model.position == .top, section: MenuSection.position.rawValue))
+        }
+        return items
     }
 
     private func handleSubtitleMenu(_ id: Int) {
         switch id {
-        case MenuID.secondaryOff:
-            secondary.select(nil)
+        case MenuID.mainOff:
+            subtitleModel.selectMain(nil)
+            controller.disableVLCSubtitles()
+        case MenuID.mainBase..<MenuID.secondOff:
+            subtitleModel.selectMain(id - MenuID.mainBase)
+            controller.disableVLCSubtitles()
+        case MenuID.secondOff:
+            subtitleModel.selectSecond(nil)
+        case MenuID.secondBase..<MenuID.positionTop:
+            subtitleModel.selectSecond(id - MenuID.secondBase)
         case MenuID.positionTop:
-            secondary.position = .top
+            subtitleModel.position = .top
         case MenuID.positionBottom:
-            secondary.position = .bottom
+            subtitleModel.position = .bottom
         case MenuID.nothing:
             break
-        case MenuID.secondaryBase..<MenuID.positionTop:
-            secondary.select(id - MenuID.secondaryBase)
         default:
+            // VLC 的字幕軌：主字幕改由 VLC 顯示
+            subtitleModel.handMainToVLC()
             controller.selectSubtitle(Int32(id))
         }
     }
@@ -394,42 +421,76 @@ struct VLCPlayerScreen: View {
     }
 }
 
-/// 第二字幕：依播放時間（每 0.1 秒讀一次 libvlc 的時間）畫在影片上，不攔截點擊。
-/// 用系統字型畫，中文不會變方格。位置以影片實際顯示範圍計算（完整顯示時扣掉上下黑邊）。
-struct SecondarySubtitleOverlay: View {
-    @ObservedObject var model: SecondarySubtitleModel
+/// App 顯示的字幕：依播放時間（每 0.1 秒讀一次 libvlc 的時間）畫在影片上，不攔截點擊。
+/// 用系統字型畫，中文不會變方格。主字幕在影片底部；第二字幕疊在主字幕上面，或放在影片上方。
+/// 位置以影片實際顯示範圍計算（完整顯示時扣掉上下黑邊）。
+struct SubtitleOverlay: View {
+    @ObservedObject var model: SubtitleModel
     /// 不觀察：時間與畫面尺寸在 TimelineView 每次更新時直接讀取
     let controller: VLCPlayerController
     let controlsVisible: Bool
 
     var body: some View {
         GeometryReader { geo in
-            if let cues = model.cues {
+            if model.mainCues != nil || model.secondCues != nil {
                 TimelineView(.periodic(from: .now, by: 0.1)) { _ in
-                    let text = cues.text(at: controller.liveTimeMs)
-                    placed(geo: geo) {
-                        if !text.isEmpty {
-                            subtitleText(text, rect: videoRect(in: geo.size))
-                        }
-                    }
+                    layout(geo: geo, timeMs: controller.liveTimeMs)
                 }
-            } else if model.isLoading || model.showsFailure {
-                placed(geo: geo) {
-                    HStack(spacing: 8) {
-                        if model.isLoading {
-                            ProgressView().tint(.white).controlSize(.small)
-                        }
-                        Text(model.isLoading ? "LoadingSecondary" : "SecondaryFailed")
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(.black.opacity(0.6), in: Capsule())
-                }
+            } else {
+                layout(geo: geo, timeMs: nil)
             }
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func layout(geo: GeometryProxy, timeMs: Int?) -> some View {
+        let rect = videoRect(in: geo.size)
+        let main = timeMs.flatMap { model.mainCues?.text(at: $0) } ?? ""
+        let second = timeMs.flatMap { model.secondCues?.text(at: $0) } ?? ""
+        let secondOnTop = model.position == .top
+        let busy = model.mainLoading || model.secondLoading || model.showsFailure
+        ZStack {
+            // 上方：第二字幕（位置選「上方」時）
+            VStack(spacing: 0) {
+                if secondOnTop && !second.isEmpty {
+                    subtitleText(second, rect: rect)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, max(rect.minY + rect.height * 0.04,
+                               max(geo.safeAreaInsets.top, 20) + (controlsVisible ? 60 : 8)))
+
+            // 下方：（第二字幕）＋ 主字幕
+            VStack(spacing: 6) {
+                Spacer(minLength: 0)
+                if busy { statusBadge }
+                if !secondOnTop && !second.isEmpty {
+                    subtitleText(second, rect: rect)
+                }
+                if !main.isEmpty {
+                    subtitleText(main, rect: rect)
+                }
+            }
+            .padding(.bottom, max(geo.size.height - rect.maxY + rect.height * 0.05, controlsVisible ? 130 : 16))
+        }
+        .padding(.horizontal, 24)
+        .frame(width: geo.size.width, height: geo.size.height)
+    }
+
+    private var statusBadge: some View {
+        let loading = model.mainLoading || model.secondLoading
+        return HStack(spacing: 8) {
+            if loading {
+                ProgressView().tint(.white).controlSize(.small)
+            }
+            Text(loading ? "LoadingSubtitles" : "SubtitleFailed")
+        }
+        .font(.footnote)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(.black.opacity(0.6), in: Capsule())
     }
 
     private func subtitleText(_ text: String, rect: CGRect) -> some View {
@@ -443,23 +504,6 @@ struct SecondarySubtitleOverlay: View {
             .shadow(color: .black, radius: 0, x: 1, y: -1)
             .shadow(color: .black, radius: 0, x: -1, y: 1)
             .shadow(color: .black.opacity(0.7), radius: 3)
-    }
-
-    /// 放在影片範圍的上方或下方。下方位置預留主字幕（VLC 畫在影片底部）的高度，第二字幕疊在主字幕上面。
-    private func placed<Content: View>(geo: GeometryProxy, @ViewBuilder content: () -> Content) -> some View {
-        let rect = videoRect(in: geo.size)
-        let top = model.position == .top
-        let topPadding = max(rect.minY + rect.height * 0.04, max(geo.safeAreaInsets.top, 20) + (controlsVisible ? 60 : 8))
-        let bottomPadding = max(geo.size.height - rect.maxY + rect.height * 0.17, controlsVisible ? 130 : 12)
-        return VStack(spacing: 0) {
-            if !top { Spacer(minLength: 0) }
-            content()
-            if top { Spacer(minLength: 0) }
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, top ? topPadding : 0)
-        .padding(.bottom, top ? 0 : bottomPadding)
-        .frame(width: geo.size.width, height: geo.size.height)
     }
 
     /// 影片實際顯示的範圍：填滿模式就是整個畫面；完整顯示時依影片比例置中
