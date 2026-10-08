@@ -6,9 +6,9 @@ Native SwiftUI companion to the Windows app. Same two modes, same dark look. Pho
 
 ## Open folders from anywhere in Files · 從「檔案」開啟任何位置
 
-Both modes pick a folder through the Files app — **iCloud Drive, On My iPhone, or a NAS you've connected in Files (SMB)**. The app does not reopen the last folder on launch — you pick one each time, so an unreachable NAS can never leave the app stuck at startup.
+Both modes pick a folder through the Files app — **iCloud Drive, On My iPhone, or a NAS you've connected in Files (SMB)**. Every folder you open is kept in a **Saved Locations** list (up to 30 per mode, most recent first), so next time one tap opens it — swipe left or long-press to rename or remove. Nothing is opened automatically at launch, and opening a saved location or scanning a folder can always be cancelled, so an unreachable NAS can never leave the app stuck. The folder button at the top returns to the list.
 
-兩種模式都透過「檔案」App 選資料夾——**iCloud Drive、我的 iPhone、或在「檔案」裡連接的 NAS (SMB)** 都可以。App 不會在啟動時自動重開上次的資料夾，每次都由你選擇，所以 NAS 沒連線時不會卡在啟動畫面。
+兩種模式都透過「檔案」App 選資料夾——**iCloud Drive、我的 iPhone、或在「檔案」裡連接的 NAS (SMB)** 都可以。開過的資料夾都會記在「**常用位置**」清單（每個模式最多 30 個，最近開的在前），下次點一下就能開；向左滑或長按可以重新命名、移除。App 啟動時不會自動開啟任何位置，開啟常用位置與掃描資料夾時都可以取消，所以 NAS 沒連線時不會卡住。右上角的資料夾按鈕可以回到清單。
 
 > **NAS / iCloud note.** iOS cannot stream a file from a Files provider: a video that isn't on the iPhone yet is **downloaded in full** before it plays (the player shows "Downloading…" with a Cancel button, and the phone needs enough free space). Episode covers and durations are only read for videos that are already local — browsing a NAS season never downloads whole episodes; not-yet-downloaded ones show a cloud badge. Photo thumbnails still load the file the first time a cell appears.
 >

@@ -21,10 +21,14 @@ struct TheaterModeView: View {
     var body: some View {
         ZStack {
             Color.wpBackground.ignoresSafeArea()
-            if session.folderURL == nil {
-                EmptyFolderView(hint: "PlaceholderVideo") { showPicker = true }
+            if let name = session.openingName {
+                FolderProgressView(title: String(format: String(localized: "OpeningLocation"), name)) {
+                    session.closeFolder()
+                }
+            } else if session.folderURL == nil {
+                LocationsView(session: session) { showPicker = true }
             } else if session.isScanning {
-                ProgressView("Scanning")
+                FolderProgressView(title: String(localized: "Scanning")) { session.closeFolder() }
             } else if session.files.isEmpty {
                 VStack(spacing: 8) {
                     Text("NoVideos").foregroundStyle(.secondary)
@@ -47,10 +51,13 @@ struct TheaterModeView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showPicker = true } label: {
-                    Image(systemName: "folder")
+                // 開著資料夾時：回到常用位置清單（可改開別的位置）
+                if session.folderURL != nil {
+                    Button { session.closeFolder() } label: {
+                        Image(systemName: "folder")
+                    }
+                    .accessibilityLabel(Text("Locations"))
                 }
-                .accessibilityLabel(Text("ChooseFolder"))
             }
             ToolbarItem(placement: .bottomBar) {
                 if !session.files.isEmpty {

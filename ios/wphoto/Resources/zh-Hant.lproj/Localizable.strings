@@ -79,3 +79,12 @@
 "VLCSubtitleTracks" = "其他字幕軌（由 VLC 顯示）";
 "Back" = "上一張";
 "Next" = "下一張";
+
+/* 常用位置 */
+"SavedLocations" = "常用位置";
+"NoSavedLocations" = "開過的資料夾會記在這裡，下次點一下就能開。";
+"CannotOpenLocation" = "無法開啟這個位置。如果是 NAS，請確認已在「檔案」App 中連線。";
+"RemoveLocation" = "移除";
+"Rename" = "重新命名";
+"Locations" = "位置";
+"OpeningLocation" = "正在開啟「%@」…";

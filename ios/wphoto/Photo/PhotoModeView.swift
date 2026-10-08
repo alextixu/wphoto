@@ -30,10 +30,14 @@ struct PhotoModeView: View {
     var body: some View {
         ZStack {
             Color.wpBackground.ignoresSafeArea()
-            if session.folderURL == nil {
-                EmptyFolderView(hint: "PlaceholderPhoto") { showPicker = true }
+            if let name = session.openingName {
+                FolderProgressView(title: String(format: String(localized: "OpeningLocation"), name)) {
+                    session.closeFolder()
+                }
+            } else if session.folderURL == nil {
+                LocationsView(session: session) { showPicker = true }
             } else if session.isScanning {
-                ProgressView("Scanning")
+                FolderProgressView(title: String(localized: "Scanning")) { session.closeFolder() }
             } else if visibleFiles.isEmpty {
                 Text("NoPhotos").foregroundStyle(.secondary)
             } else {
@@ -64,8 +68,12 @@ struct PhotoModeView: View {
                         Label(typeFilter ?? String(localized: "AllTypes"), systemImage: "line.3.horizontal.decrease.circle")
                     }
                 }
-                Button { showPicker = true } label: {
-                    Image(systemName: "folder")
+                // 開著資料夾時：回到常用位置清單（可改開別的位置）
+                if session.folderURL != nil {
+                    Button { session.closeFolder() } label: {
+                        Image(systemName: "folder")
+                    }
+                    .accessibilityLabel(Text("Locations"))
                 }
             }
             ToolbarItem(placement: .bottomBar) {
@@ -78,10 +86,11 @@ struct PhotoModeView: View {
         }
         .fileImporter(isPresented: $showPicker, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result {
-                typeFilter = nil
                 session.open(url)
             }
         }
+        // 換資料夾（含開常用位置、回到清單）時清掉類型篩選
+        .onChange(of: session.folderURL) { _, _ in typeFilter = nil }
         .fullScreenCover(item: $selected) { file in
             PhotoDetailView(files: visibleFiles, current: file)
         }
@@ -139,31 +148,5 @@ struct ThumbnailCell: View {
                     image = await ThumbnailCache.shared.thumbnail(for: file)
                 }
             }
-    }
-}
-
-struct EmptyFolderView: View {
-    let hint: LocalizedStringKey
-    let action: () -> Void
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 52))
-                .foregroundStyle(Color.wpAccent)
-            Text(hint)
-                .foregroundStyle(.secondary)
-            Button(action: action) {
-                Text("ChooseFolder")
-                    .fontWeight(.semibold)
-                    .padding(.horizontal, 22).padding(.vertical, 10)
-            }
-            .buttonStyle(.borderedProminent)
-            Text("FilesHint")
-                .font(.footnote)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-        }
     }
 }

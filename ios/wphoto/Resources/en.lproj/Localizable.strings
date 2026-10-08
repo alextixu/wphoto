@@ -79,3 +79,12 @@
 "VLCSubtitleTracks" = "Other tracks (shown by VLC)";
 "Back" = "Previous";
 "Next" = "Next";
+
+/* 常用位置 */
+"SavedLocations" = "Saved Locations";
+"NoSavedLocations" = "Folders you open are remembered here — next time, one tap opens them.";
+"CannotOpenLocation" = "Couldn't open this location. If it's on a NAS, check that the NAS is connected in the Files app.";
+"RemoveLocation" = "Remove";
+"Rename" = "Rename";
+"Locations" = "Locations";
+"OpeningLocation" = "Opening “%@”…";
