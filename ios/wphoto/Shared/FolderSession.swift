@@ -105,7 +105,7 @@ final class FolderSession: ObservableObject {
 
     /// 點進子資料夾
     func enter(_ folder: SubFolder) {
-        // 連點兩下不要進去兩次        guard folderURL != nil, stack.last != folder.url else { return }   // 連點兩下只進去一次
+        guard folderURL != nil, stack.last != folder.url else { return }   // 連點兩下只進去一次
         stack.append(folder.url)
         Task { await load(folder.url) }
     }
