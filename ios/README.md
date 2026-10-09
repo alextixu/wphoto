@@ -8,7 +8,11 @@ Native SwiftUI companion to the Windows app. Same two modes, same dark look. Pho
 
 Both modes pick a folder through the Files app — **iCloud Drive, On My iPhone, or a NAS you've connected in Files (SMB)**. Every folder you open is kept in a **Saved Locations** list (up to 30 per mode, most recent first), so next time one tap opens it — swipe left or long-press to rename or remove. Nothing is opened automatically at launch, and opening a saved location or scanning a folder can always be cancelled, so an unreachable NAS can never leave the app stuck. The folder button at the top returns to the list.
 
+Folders open **one level at a time**, like the Files app: subfolders are shown as tiles above the photos or videos, tap one to go in, and the back button (⌘↑ on a keyboard) goes up a level. Only the current level is read, so even a large NAS folder such as a whole movie library opens quickly, and levels you've already visited open instantly. Pull down to refresh. In Theater mode, `Subs` / `Subtitles` folders are hidden — their subtitles are picked up automatically when you play the video.
+
 兩種模式都透過「檔案」App 選資料夾——**iCloud Drive、我的 iPhone、或在「檔案」裡連接的 NAS (SMB)** 都可以。開過的資料夾都會記在「**常用位置**」清單（每個模式最多 30 個，最近開的在前），下次點一下就能開；向左滑或長按可以重新命名、移除。App 啟動時不會自動開啟任何位置，開啟常用位置與掃描資料夾時都可以取消，所以 NAS 沒連線時不會卡住。右上角的資料夾按鈕可以回到清單。
+
+資料夾像「檔案」App 一樣**一層一層進去**：子資料夾以方塊顯示在照片或影片上方，點一下進去，左上角的返回鍵（鍵盤 ⌘↑）回上一層。每次只讀目前這一層，所以就算是整個電影庫這種 NAS 大資料夾也能很快打開，走過的層再回去會直接顯示。往下拉可以重新整理。看劇模式不顯示 `Subs`、`Subtitles` 資料夾——播放時會自動去裡面找字幕。
 
 > **NAS / iCloud note.** iOS cannot stream a file from a Files provider: a video that isn't on the iPhone yet is **downloaded in full** before it plays (the player shows "Downloading…" with a Cancel button, and the phone needs enough free space). Episode covers and durations are only read for videos that are already local — browsing a NAS season never downloads whole episodes; not-yet-downloaded ones show a cloud badge. Photo thumbnails still load the file the first time a cell appears.
 >

@@ -5,6 +5,7 @@ import Combine
 /// 開過的資料夾會記在「常用位置」，下次點一下就能開；但 App 啟動時不會自動開啟任何資料夾
 /// （以前會自動重開上次的資料夾，NAS 沒連線時就卡在掃描畫面）。
 /// 開啟常用位置時，解析書籤與掃描都在背景執行，隨時可以取消。
+/// 資料夾一層一層進去：每次只讀目前這一層（子資料夾＋媒體檔），NAS 上的大資料夾也能很快打開。
 @MainActor
 final class FolderSession: ObservableObject {
     enum Kind: String { case photo, video }
@@ -23,7 +24,19 @@ final class FolderSession: ObservableObject {
         }
     }
 
+    /// 目前這一層的子資料夾
+    struct SubFolder: Identifiable, Hashable {
+        let url: URL
+        let name: String
+        var id: URL { url }
+    }
+
+    /// 開啟的位置本身（從「檔案」選的或常用位置）
     @Published private(set) var folderURL: URL?
+    /// 從開啟的位置一路點進去的資料夾：第一個是位置本身，最後一個是目前這一層
+    @Published private(set) var stack: [URL] = []
+    /// 目前這一層的子資料夾與媒體檔
+    @Published private(set) var folders: [SubFolder] = []
     @Published private(set) var files: [MediaFile] = []
     @Published private(set) var isScanning = false
     @Published var errorMessage: String?
@@ -37,8 +50,18 @@ final class FolderSession: ObservableObject {
 
     private let kind: Kind
     private var accessing = false
-    /// 每次開啟資料夾 +1：較早開始、較晚回來的掃描結果直接丟棄
+    /// 每次開啟或關閉位置 +1：較早開始、較晚回來的掃描結果直接丟棄
     private var scanGeneration = 0
+    /// 讀過的每一層都記著：回上一層不必再讀 NAS
+    private var listings: [URL: Listing] = [:]
+
+    private struct Listing {
+        var folders: [SubFolder] = []
+        var files: [MediaFile] = []
+    }
+
+    /// 看劇模式不列出字幕資料夾（播放時會自動去裡面找字幕）
+    private static let subtitleFolderNames: Set<String> = ["subs", "subtitles"]
 
     init(kind: Kind) {
         self.kind = kind
@@ -49,8 +72,17 @@ final class FolderSession: ObservableObject {
 
     private var savedKey: String { "savedFolders.\(kind.rawValue)" }
 
+    /// 目前這一層的名稱
     var folderDisplayName: String {
-        folderURL?.lastPathComponent ?? ""
+        stack.last?.lastPathComponent ?? ""
+    }
+
+    /// 是否在點進去的子資料夾裡（可以回上一層）
+    var canGoUp: Bool { stack.count > 1 }
+
+    /// 上一層的名稱（返回按鈕用）
+    var parentDisplayName: String {
+        stack.count > 1 ? stack[stack.count - 2].lastPathComponent : ""
     }
 
     // MARK: - 開啟資料夾
@@ -63,10 +95,38 @@ final class FolderSession: ObservableObject {
             return
         }
         accessing = true
+        scanGeneration += 1
         folderURL = url
+        stack = [url]
         openingName = nil
         remember(url)
-        Task { await scan() }
+        Task { await load(url) }
+    }
+
+    /// 點進子資料夾
+    func enter(_ folder: SubFolder) {
+        // 連點兩下不要進去兩次        guard folderURL != nil, stack.last != folder.url else { return }   // 連點兩下只進去一次
+        stack.append(folder.url)
+        Task { await load(folder.url) }
+    }
+
+    /// 回上一層（讀過的層直接顯示）
+    func goUp() {
+        guard stack.count > 1 else { return }
+        stack.removeLast()
+        if let url = stack.last { Task { await load(url) } }
+    }
+
+    /// 掃描中按取消：在子資料夾就回上一層，在最上層就回到常用位置清單
+    func cancelScan() {
+        if canGoUp { goUp() } else { closeFolder() }
+    }
+
+    /// 重新讀取目前這一層（下拉更新）
+    func reload() async {
+        guard let url = stack.last else { return }
+        listings[url] = nil
+        await load(url, showProgress: false)
     }
 
     /// 開啟常用位置：書籤在背景解析（NAS 沒連線時可能要等），期間可以取消
@@ -97,7 +157,6 @@ final class FolderSession: ObservableObject {
         scanGeneration += 1
         stopAccess()
         folderURL = nil
-        files = []
         isScanning = false
         openingName = nil
     }
@@ -150,60 +209,78 @@ final class FolderSession: ObservableObject {
             url.stopAccessingSecurityScopedResource()
         }
         accessing = false
+        stack = []
+        listings = [:]
+        folders = []
         files = []
     }
 
-    // MARK: - 掃描（遞迴子資料夾）
+    // MARK: - 讀取一層資料夾
 
-    private func scan() async {
-        guard let root = folderURL else { return }
-        scanGeneration += 1
+    private func load(_ url: URL, showProgress: Bool = true) async {
+        if let cached = listings[url] {
+            folders = cached.folders
+            files = cached.files
+            isScanning = false
+            return
+        }
         let generation = scanGeneration
-        isScanning = true
+        if showProgress {
+            isScanning = true
+            folders = []
+            files = []
+        }
         errorMessage = nil
         let wantVideo = kind == .video
-        let result: [MediaFile] = await Task.detached(priority: .userInitiated) {
-            Self.enumerate(root: root, video: wantVideo)
+        let result: Listing? = await Task.detached(priority: .userInitiated) {
+            Self.list(url, video: wantVideo)
         }.value
-        // 掃描期間使用者已改選別的資料夾（例如 NAS 沒回應時改選本機）：這份結果不要了
+        // 期間使用者已關閉或改開別的位置：這份結果不要了
         guard generation == scanGeneration else { return }
-        files = result
+        if let result { listings[url] = result }
+        // 已經離開這一層（例如按了取消回上一層）：結果留著，下次點進來直接顯示
+        guard stack.last == url else { return }
+        folders = result?.folders ?? []
+        files = result?.files ?? []
         isScanning = false
+        if result == nil { errorMessage = String(localized: "CannotOpenLocation") }
     }
 
-    nonisolated private static func enumerate(root: URL, video: Bool) -> [MediaFile] {
-        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .nameKey]
-        // 不用 .skipsHiddenFiles：未下載的 iCloud 影片在磁碟上可能只是隱藏的 ".<檔名>.icloud" 占位檔，
+    /// 只讀這一層：子資料夾＋媒體檔（讀不到時回傳 nil，例如 NAS 斷線）
+    nonisolated private static func list(_ dir: URL, video: Bool) -> Listing? {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .isPackageKey]
+        // 不略過隱藏檔：未下載的 iCloud 影片在磁碟上可能只是隱藏的 ".<檔名>.icloud" 占位檔，
         // 要換回真正檔名列出來（播放前再下載）；其他隱藏項目自行略過
-        guard let en = FileManager.default.enumerator(
-            at: root, includingPropertiesForKeys: keys, options: [.skipsPackageDescendants]
-        ) else { return [] }
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: keys, options: []
+        ) else { return nil }
 
-        let rootPath = root.standardizedFileURL.path
-        var out: [MediaFile] = []
+        var out = Listing()
         var seen = Set<String>()
-        for case let url as URL in en {
+        for url in items {
             var fileURL = url
-            if url.lastPathComponent.hasPrefix(".") {
+            let name = url.lastPathComponent
+            if name.hasPrefix(".") {
                 // 占位檔只在看劇模式列出（照片模式目前無法先下載再檢視，維持原本略過）
-                guard video, let real = FileAvailability.documentURL(forPlaceholderStub: url) else {
-                    if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
-                        en.skipDescendants()   // 隱藏資料夾不往下走
-                    }
-                    continue
-                }
+                guard video, let real = FileAvailability.documentURL(forPlaceholderStub: url) else { continue }
                 fileURL = real
             } else {
-                guard let v = try? url.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { continue }
+                guard let v = try? url.resourceValues(forKeys: Set(keys)) else { continue }
+                if v.isDirectory == true {
+                    guard v.isPackage != true else { continue }
+                    if video && subtitleFolderNames.contains(name.lowercased()) { continue }
+                    out.folders.append(SubFolder(url: url, name: name))
+                    continue
+                }
+                guard v.isRegularFile == true else { continue }
             }
             let ok = video ? MediaTypes.isVideo(fileURL) : MediaTypes.isPhoto(fileURL)
             guard ok else { continue }
-            let full = fileURL.standardizedFileURL.path
-            guard seen.insert(full).inserted else { continue }   // 本體與占位同時存在時只列一次
-            var rel = full.hasPrefix(rootPath) ? String(full.dropFirst(rootPath.count)) : fileURL.lastPathComponent
-            if rel.hasPrefix("/") { rel.removeFirst() }
-            out.append(MediaFile(url: fileURL, relativeName: rel))
+            guard seen.insert(fileURL.standardizedFileURL.path).inserted else { continue }   // 本體與占位同時存在時只列一次
+            out.files.append(MediaFile(url: fileURL, relativeName: fileURL.lastPathComponent))
         }
-        return out.sorted { $0.relativeName.localizedStandardCompare($1.relativeName) == .orderedAscending }
+        out.folders.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        out.files.sort { $0.relativeName.localizedStandardCompare($1.relativeName) == .orderedAscending }
+        return out
     }
 }

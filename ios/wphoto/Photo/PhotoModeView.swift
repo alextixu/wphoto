@@ -37,11 +37,16 @@ struct PhotoModeView: View {
             } else if session.folderURL == nil {
                 LocationsView(session: session) { showPicker = true }
             } else if session.isScanning {
-                FolderProgressView(title: String(localized: "Scanning")) { session.closeFolder() }
-            } else if visibleFiles.isEmpty {
+                FolderProgressView(title: String(localized: "Scanning")) { session.cancelScan() }
+            } else if visibleFiles.isEmpty && session.folders.isEmpty {
                 Text("NoPhotos").foregroundStyle(.secondary)
             } else {
                 ScrollView {
+                    if !session.folders.isEmpty {
+                        FolderGrid(folders: session.folders, large: sizeClass == .regular) { session.enter($0) }
+                            .padding([.horizontal, .top], 12)
+                            .padding(.bottom, 9)
+                    }
                     LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
                         ForEach(visibleFiles) { file in
                             ThumbnailCell(file: file)
@@ -50,10 +55,12 @@ struct PhotoModeView: View {
                     }
                     .padding(Self.gridSpacing)
                 }
+                .refreshable { await session.reload() }
             }
         }
         .navigationTitle(session.folderURL == nil ? String(localized: "PhotoMode") : session.folderDisplayName)
         .navigationBarTitleDisplayMode(.inline)
+        .modifier(FolderBackButton(session: session))
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if !availableTypes.isEmpty {
@@ -89,8 +96,8 @@ struct PhotoModeView: View {
                 session.open(url)
             }
         }
-        // 換資料夾（含開常用位置、回到清單）時清掉類型篩選
-        .onChange(of: session.folderURL) { _, _ in typeFilter = nil }
+        // 換資料夾（含點進子資料夾、回上一層、開常用位置）時清掉類型篩選
+        .onChange(of: session.stack) { _, _ in typeFilter = nil }
         .fullScreenCover(item: $selected) { file in
             PhotoDetailView(files: visibleFiles, current: file)
         }

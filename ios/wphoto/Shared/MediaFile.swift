@@ -3,7 +3,7 @@ import Foundation
 /// 資料夾裡的一個媒體檔案
 struct MediaFile: Identifiable, Hashable {
     let url: URL
-    /// 相對於所選資料夾的路徑（子資料夾的檔案顯示「子資料夾/檔名」）
+    /// 顯示用的檔名（資料夾一層一層進去，只列目前這一層的檔案）
     let relativeName: String
 
     var id: URL { url }

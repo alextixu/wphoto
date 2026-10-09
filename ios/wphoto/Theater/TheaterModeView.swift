@@ -28,8 +28,8 @@ struct TheaterModeView: View {
             } else if session.folderURL == nil {
                 LocationsView(session: session) { showPicker = true }
             } else if session.isScanning {
-                FolderProgressView(title: String(localized: "Scanning")) { session.closeFolder() }
-            } else if session.files.isEmpty {
+                FolderProgressView(title: String(localized: "Scanning")) { session.cancelScan() }
+            } else if session.files.isEmpty && session.folders.isEmpty {
                 VStack(spacing: 8) {
                     Text("NoVideos").foregroundStyle(.secondary)
                     Text("VideoFormatNote").font(.footnote).foregroundStyle(.tertiary)
@@ -37,18 +37,25 @@ struct TheaterModeView: View {
                 }
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: isLarge ? 24 : 16) {
-                        ForEach(session.files) { file in
-                            EpisodeCard(file: file, refreshToken: refreshToken)
-                                .onTapGesture { playing = file }
+                    VStack(spacing: isLarge ? 24 : 16) {
+                        if !session.folders.isEmpty {
+                            FolderGrid(folders: session.folders, large: isLarge) { session.enter($0) }
+                        }
+                        LazyVGrid(columns: columns, spacing: isLarge ? 24 : 16) {
+                            ForEach(session.files) { file in
+                                EpisodeCard(file: file, refreshToken: refreshToken)
+                                    .onTapGesture { playing = file }
+                            }
                         }
                     }
                     .padding(isLarge ? 20 : 12)
                 }
+                .refreshable { await session.reload() }
             }
         }
         .navigationTitle(session.folderURL == nil ? String(localized: "VideoMode") : session.folderDisplayName)
         .navigationBarTitleDisplayMode(.inline)
+        .modifier(FolderBackButton(session: session))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 // 開著資料夾時：回到常用位置清單（可改開別的位置）
