@@ -77,6 +77,8 @@
 
 4. 用 Sideloadly 搭配免費 Apple ID 安裝。7 天到期後，拿同一個 IPA 重裝即可，資料會保留。
 
+有 Mac（Apple 晶片）時也可以直接在本機編譯：`xcodegen generate` 後用 Xcode 開 `ios/wphoto.xcodeproj`，執行目標選「My Mac (Designed for iPad)」就能在 Mac 上用 iPad 版。免費 Apple ID 簽的版本 7 天後要再從 Xcode 執行一次。
+
 上架 App Store 的準備在 `ios/AppStore/`（說明、三語商店文字、隱私權政策）和 `.github/workflows/ios-appstore.yml`。需要 Apple 開發者帳號，目前還沒申請。Mac 版的方向是讓 iPad 版直接在 Apple 晶片的 Mac 上執行。
 
 ## iOS 版技術重點
@@ -94,36 +96,14 @@
 
 ## 待辦
 
-### 已核准、還沒開始寫的四個功能（iOS）
+### iOS 四個功能的狀態（2026-10-27）
 
-使用者 2026-10-21 已經說好要做。做完先給使用者看，核准後才 commit／推送／編 IPA。
-
-1. **手機相簿滑動整理**（從另一個專案 PhotoSweep 搬過來）
-   - 入口：照片模式的位置清單最上面加一列「手機相簿」。只用在手機相簿，「檔案」和 NAS 資料夾維持原本的瀏覽方式。
-   - 第一次使用先說明玩法，再要相簿權限（PhotoKit）。只允許部分照片時，可以再多選。
-   - 相簿首頁：統計（已檢視／垃圾桶／已釋放空間）、快速開始（隨機、截圖、影片、最愛、全部）、按月份分組，都從最新的照片開始。
-   - 滑動畫面：**右滑保留、左滑進 App 內的垃圾桶、點兩下跳出大愛心並加入最愛**（和 Apple「照片」同步；點兩下只加入，取消要按 ♥）、點一下看大圖；下方有復原／垃圾桶／保留／♥ 四個按鈕。
-   - 垃圾桶可以還原；清空時由 iOS 跳確認框，刪掉的照片進「最近刪除」保留 30 天。
-   - 預設：包含影片（和 PhotoSweep 一樣）；進度和 PhotoSweep 分開記。
-   - 要加 `NSPhotoLibraryUsageDescription`（三語），並更新隱私權政策與 README。
-   - 搬移注意事項：
-     - PhotoSweep 的 `HomeView` 自己有一層 `NavigationStack`，wphoto 外層已經有，搬過來要拿掉，改用 `.navigationDestination(item:)`。
-     - 類型名稱沒有衝突，但建議改名：`HomeView`→`LibraryHomeView`、`Layout`→`SwipeLayout`、`Route`→`LibraryRoute`、`PermissionView`→`LibraryPermissionView`。
-     - PhotoSweep 的字串在 `Localizable.xcstrings`，要轉成 wphoto 的 `.strings` 三語。
-2. **電影海報牆**（看劇模式）
-   - 資料夾方塊改成直式海報（2:3），下面顯示片名。
-   - 封面依序找資料夾裡的 `poster` / `folder` / `cover` / `fanart` 圖片，再來是其他圖片，最後用影片截一格。
-   - 只讀畫面上看得到的資料夾；讀封面時順便把那一層的內容存進 `FolderSession` 的快取，點進去就不用再等 NAS。
-   - 照片模式的資料夾維持原樣。
-3. **續看進度**
-   - AVPlayer（`Theater/PlayerScreen.swift`）和 VLC（`Theater/VLCPlayerScreen.swift`、`VLCPlayerController` 的 `currentMs` / `durationMs` / `seek(toMs:)`）都要記住看到哪裡。
-   - 重新打開時從上次的位置繼續並提示；看不到 30 秒或看到最後 5% 的就從頭播。
-   - 影片卡片（`EpisodeCard`）底部加進度條，看完的打勾。
-4. **首頁的「繼續觀看」和「最近位置」**（`App/ModeSelectView.swift`）
-   - 模式卡片下方列出：
-     - 繼續觀看：附進度條，點一下會開啟所在的常用位置、進到那一層並開始播放。
-     - 最近位置：照片和影片模式最近開過的位置，點一下直接進去。
-   - 都是點了才開，啟動時不自動連 NAS。
+- **手機相簿滑動整理（PhotoSweep）：使用者決定取消。** 照片模式維持只讀「檔案」裡的照片與相機 RAW，不要求照片圖庫權限。
+- **電影海報牆、續看進度、首頁的「繼續觀看」與「最近位置」：已在 `ios` 分支寫好**，並在 Mac 的 iPad 模擬器上測過。三語字串、README、隱私權政策都已同步。
+  - 海報牆：`Theater/PosterGrid.swift`；封面查找與預先讀取的快取在 `Shared/FolderSession.swift` 的 `posterSource(for:)`（同時最多讀 4 個資料夾）。
+  - 續看進度：`Theater/WatchProgressStore.swift`（存在 UserDefaults，以影片路徑為 key），AVPlayer 在 `Theater/PlayerScreen.swift`，VLC 用 `:start-time` 從續播位置開檔。
+  - 首頁：`App/ModeSelectView.swift`；從首頁開回某一層用 `FolderSession.openSaved(_:subfolders:)`。
+  - 等使用者說「可以推」才 commit、push、編 IPA。
 
 ### 其他
 
