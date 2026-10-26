@@ -54,6 +54,52 @@
             <Setter Property="Margin" Value="12,0,12,14"/>
             <Setter Property="Padding" Value="0,8"/>
         </Style>
+        <!-- 縮圖牆卡片（照片模式與看劇模式共用）。
+             每張卡片外框固定 224×172（縮圖區 126 高 + 檔名固定兩行高），一行、兩行檔名的卡片一樣大，
+             WrapPanel 才會排成整齊的格線。Button 的 Padding／邊框歸零、內容撐滿、靠上對齊，
+             不讓任何元素把卡片撐大或在同一列上下錯位 -->
+        <DataTemplate x:Key="GalleryCardTemplate">
+            <ui:Button Appearance="Transparent" Padding="0" BorderThickness="0" Margin="8"
+                       Width="224" Height="172"
+                       HorizontalAlignment="Left" VerticalAlignment="Top"
+                       HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                       CornerRadius="10" Cursor="Hand"
+                       Click="Episode_Click" Tag="{Binding}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="126"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <!-- 縮圖區：ClipToBounds 只會裁成直角，改用與卡片同尺寸（224×126）的圓角 Clip -->
+                    <Border Background="#FF1C1C1E" CornerRadius="10">
+                        <Border.Clip>
+                            <RectangleGeometry Rect="0,0,224,126" RadiusX="10" RadiusY="10"/>
+                        </Border.Clip>
+                        <Grid>
+                            <TextBlock Text="{Binding Glyph}" FontSize="36"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <!-- UniformToFill 置中裁切（預設 Stretch 對齊時，比格子大的圖會從左上角裁） -->
+                            <Image Source="{Binding Thumb}" Stretch="UniformToFill"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Border Background="#CC8E5A2B" CornerRadius="4" Padding="5,1" Margin="8"
+                                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                                    Visibility="{Binding RawBadgeVisibility}">
+                                <TextBlock Text="RAW" Foreground="White" FontSize="9" FontWeight="Bold"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+                    <!-- 檔名：固定兩行高（行高 16 × 2），超過兩行以省略號結尾 -->
+                    <TextBlock Grid.Row="1" Text="{Binding Name}" Foreground="White" FontSize="12"
+                               Margin="4,7,4,0" Height="32" VerticalAlignment="Top"
+                               LineHeight="16" LineStackingStrategy="BlockLineHeight"
+                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis" TextAlignment="Center"/>
+                </Grid>
+            </ui:Button>
+        </DataTemplate>
+        <!-- 卡片等大、間距一致；整個格線水平置中，左右留白對稱 -->
+        <ItemsPanelTemplate x:Key="GalleryPanel">
+            <WrapPanel HorizontalAlignment="Center"/>
+        </ItemsPanelTemplate>
     </ui:FluentWindow.Resources>
 
     <Grid>
@@ -86,7 +132,7 @@
                           Visibility="Collapsed" DisplayMemberPath="Name" Margin="0,0,12,0"
                           SelectionChanged="SubtitleSelect_SelectionChanged"
                           DropDownOpened="SubtitleSelect_DropDownOpened"/>
-                <ui:Button x:Name="EpisodesBtn" Content="{DynamicResource L.Episodes}" Click="EpisodesBtn_Click"
+                <ui:Button x:Name="EpisodesBtn" Click="EpisodesBtn_Click"
                            Visibility="Collapsed"
                            Appearance="Secondary" CornerRadius="8" Padding="12,6" Margin="0,0,12,0">
                     <ui:Button.Icon>
@@ -211,36 +257,11 @@
                             <!-- 封面選集：疊在影片視窗上，影片視窗保持存在，點封面播放才不會卡。
                                  底色包在 Border 上（WPF-UI 的 ScrollViewer 樣板不畫 Background） -->
                             <Border x:Name="EpisodePicker" Visibility="Collapsed" Background="#FF121214">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
-                                <ItemsControl x:Name="EpisodeList">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <WrapPanel/>
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <ui:Button Appearance="Transparent" Padding="0" Margin="8"
-                                                       CornerRadius="10" Cursor="Hand"
-                                                       Click="Episode_Click" Tag="{Binding}">
-                                                <StackPanel Width="224">
-                                                    <Border CornerRadius="10" Background="#FF1C1C1E"
-                                                            Height="126" ClipToBounds="True">
-                                                        <Grid>
-                                                            <TextBlock Text="🎬" FontSize="36"
-                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                            <Image Source="{Binding Thumb}" Stretch="UniformToFill"/>
-                                                        </Grid>
-                                                    </Border>
-                                                    <TextBlock Text="{Binding Name}" Foreground="White" FontSize="12"
-                                                               Margin="2,7,2,2" TextWrapping="Wrap" MaxHeight="36"
-                                                               TextTrimming="CharacterEllipsis" TextAlignment="Center"/>
-                                                </StackPanel>
-                                            </ui:Button>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
+                                    <ItemsControl x:Name="EpisodeList"
+                                                  ItemTemplate="{StaticResource GalleryCardTemplate}"
+                                                  ItemsPanel="{StaticResource GalleryPanel}"/>
+                                </ScrollViewer>
                             </Border>
                             <Border x:Name="VideoControls" VerticalAlignment="Bottom"
                                     Margin="18,0,18,14" Background="#E6141416"
@@ -290,6 +311,16 @@
                             </Border>
                         </Grid>
                     </vlc:VideoView>
+                    <!-- 照片模式縮圖牆（看劇模式的選集在 VideoView 疊層內，因為影片視窗必須保持存在） -->
+                    <Border x:Name="PhotoGrid" Visibility="Collapsed" Background="#FF121214">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
+                            <ItemsControl x:Name="PhotoGridList"
+                                          ItemTemplate="{StaticResource GalleryCardTemplate}"
+                                          ItemsPanel="{StaticResource GalleryPanel}"/>
+                        </ScrollViewer>
+                    </Border>
+                    <ui:ProgressRing x:Name="LoadingRing" IsIndeterminate="True" Width="44" Height="44"
+                                     Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     <TextBlock x:Name="PlaceholderText" Text="{DynamicResource L.PlaceholderPhoto}"
                                Foreground="#5A5A5E" FontSize="17"
                                HorizontalAlignment="Center" VerticalAlignment="Center"/>

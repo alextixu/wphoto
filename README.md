@@ -20,6 +20,7 @@ Two modes at startup · 啟動時選擇模式：
 - **JPEG / HEIF (.HIF)** — every Fuji / Sony still format, HEIF decoded without system extensions
 - **Full shooting info panel** — camera, lens, ISO, shutter, aperture, focal length, exposure mode, GPS…
 - **Zoom & pan** — mouse-wheel zoom up to 1000%, drag to pan, double-click to reset
+- **Thumbnail gallery** on folder open — RAW embedded previews appear in a blink, click any to view
 - **Recursive folder scan** with file-type filter (only shows types that actually exist in the folder)
 
 ## Theater mode · 看劇模式
@@ -38,6 +39,7 @@ Two modes at startup · 啟動時選擇模式：
 - JPEG / HEIF (.HIF) 全支援，HEIF 不需系統擴充
 - 完整拍攝資訊面板：相機、鏡頭、ISO、快門、光圈、焦距、GPS…
 - 滾輪縮放（最大 1000%）、拖曳平移、雙擊還原
+- 縮圖牆：開資料夾先看縮圖總覽（RAW 取內嵌預覽，秒出），點選檢視
 - 遞迴掃描子資料夾、依類型篩選
 
 **看劇模式**
@@ -106,13 +108,20 @@ Grab the latest zip from [Releases](https://github.com/lintaixu/wphoto/releases)
 dotnet build PhotoViewer
 ```
 
-Release build:
+Release build (folder publish + ReadyToRun; produces `dist/wphoto_v<version>_win-x64.zip`):
 
 ```
-dotnet publish PhotoViewer -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+.\publish.ps1                      # zip only
+.\publish.ps1 -Install E:\wphoto   # also copy to a folder you can pin to the taskbar
 ```
 
-Ship `wphoto.exe` together with the `libvlc` folder.
+Why a folder instead of a single-file exe: a 438 MB single file must be read completely on every cold start — 20 s on a laptop HDD. The folder build starts in ~3 s cold / 0.6 s warm.
+
+## iOS · iPhone 版
+
+A native SwiftUI companion app lives in [`ios/`](ios/) — same two modes, opens folders from the Files app (iCloud Drive, On My iPhone, or a NAS connected in Files), Apple-native RAW/HEIF/HDR decoding. See [ios/README.md](ios/README.md) for building with Xcode.
+
+原生 SwiftUI 的 iPhone 版在 [`ios/`](ios/)：同樣兩種模式，資料夾從「檔案」App 開啟（iCloud／本機／檔案中連接的 NAS），RAW、HEIF、HDR 走 Apple 原生解碼。建置方式見 [ios/README.md](ios/README.md)。
 
 ## Tech stack · 技術
 
