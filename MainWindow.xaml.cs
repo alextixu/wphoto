@@ -28,6 +28,10 @@ public class EpisodeItem : System.ComponentModel.INotifyPropertyChanged
 {
     public required string Path { get; init; }
     public required string Name { get; init; }
+    public bool IsRaw => ImageLoader.IsRaw(Path);
+    public bool IsVideo => ImageLoader.IsVideo(Path);
+    public string Glyph => IsVideo ? "🎬" : "🖼️";
+    public Visibility RawBadgeVisibility => IsRaw ? Visibility.Visible : Visibility.Collapsed;
 
     System.Windows.Media.Imaging.BitmapSource? _thumb;
     public System.Windows.Media.Imaging.BitmapSource? Thumb
@@ -62,6 +66,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         InitializeComponent();
         FileList.ItemsSource = _files;
         EpisodeList.ItemsSource = _episodes;
+        PhotoGridList.ItemsSource = _episodes;
 
         // 語言選單反映目前語言（Loc.Init 已在 App 啟動時執行）
         _suppressLangEvent = true;
@@ -70,7 +75,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 LangSelect.SelectedItem = it;
         _suppressLangEvent = false;
 
-        InitVideoPlayer();
+        // LibVLC 不在啟動時初始化（載入 400+ 外掛在 HDD 上要數秒）；進看劇模式才在背景載入
 
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && System.IO.Directory.Exists(args[1]))
@@ -87,6 +92,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (ModeOverlay.Visibility != Visibility.Visible)
         {
             AppTitleBar.Title = Loc.T(_mode == AppMode.Photo ? "AppTitlePhoto" : "AppTitleVideo");
+            EpisodesBtn.Content = Loc.T(_mode == AppMode.Photo ? "Gallery" : "Episodes");
             if (MainImage.Source == null && !VideoActive)
                 PlaceholderText.Text = Loc.T(_mode == AppMode.Photo ? "PlaceholderPhoto" : "PlaceholderVideo");
         }
@@ -122,7 +128,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _mode = mode;
         AppTitleBar.Title = Loc.T(mode == AppMode.Photo ? "AppTitlePhoto" : "AppTitleVideo");
         PlaceholderText.Text = Loc.T(mode == AppMode.Photo ? "PlaceholderPhoto" : "PlaceholderVideo");
+        EpisodesBtn.Content = Loc.T(mode == AppMode.Photo ? "Gallery" : "Episodes");
         ModeOverlay.Visibility = Visibility.Collapsed;
+        if (mode == AppMode.Video)
+            _ = EnsurePlayerAsync(); // 使用者選資料夾的同時在背景載入播放引擎
 
         if (_pendingFolder != null)
         {
@@ -139,7 +148,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _thumbToken++;
         StopVideo();
         _episodes.Clear();
-        EpisodePicker.Visibility = Visibility.Collapsed;
+        HideGallery();
         EpisodesBtn.Visibility = Visibility.Collapsed;
         _files.Clear();
         _allPaths.Clear();
@@ -153,25 +162,35 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         ModeOverlay.Visibility = Visibility.Visible;
     }
 
-    void InitVideoPlayer()
+    Task<bool>? _vlcInitTask;
+
+    /// <summary>確保播放引擎就緒；第一次呼叫時在背景載入 LibVLC（可重複 await）</summary>
+    Task<bool> EnsurePlayerAsync() => _vlcInitTask ??= InitVideoPlayerAsync();
+
+    async Task<bool> InitVideoPlayerAsync()
     {
         try
         {
-            // 單一檔案發行時 libvlc 資料夾在 exe 旁邊，明確指定路徑最保險
-            string exeDir = System.IO.Path.GetDirectoryName(Environment.ProcessPath!)!;
-            string libvlcDir = System.IO.Path.Combine(exeDir, "libvlc", Environment.Is64BitProcess ? "win-x64" : "win-x86");
-            if (System.IO.Directory.Exists(libvlcDir))
-                Core.Initialize(libvlcDir);
-            else
-                Core.Initialize();
-
-            _libVLC = new LibVLC();
+            var libVLC = await Task.Run(() =>
+            {
+                // 發行時 libvlc 資料夾在 exe 旁邊，明確指定路徑最保險
+                string exeDir = System.IO.Path.GetDirectoryName(Environment.ProcessPath!)!;
+                string libvlcDir = System.IO.Path.Combine(exeDir, "libvlc", Environment.Is64BitProcess ? "win-x64" : "win-x86");
+                if (System.IO.Directory.Exists(libvlcDir))
+                    Core.Initialize(libvlcDir);
+                else
+                    Core.Initialize();
+                return new LibVLC(); // 最重的一步（掃描/載入外掛），放背景執行緒
+            });
+            _libVLC = libVLC;
             _player = new MediaPlayer(_libVLC);
             VideoViewControl.MediaPlayer = _player;
+            return true;
         }
         catch (Exception ex)
         {
             StatusLabel.Text = string.Format(Loc.T("PlayerInitFail"), ex.Message);
+            return false;
         }
     }
 
@@ -655,11 +674,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         if (_files.Count > 0)
         {
-            EpisodesBtn.Visibility = _mode == AppMode.Video ? Visibility.Visible : Visibility.Collapsed;
+            EpisodesBtn.Visibility = Visibility.Visible;
 
-            if (_mode == AppMode.Video && selectFile == null)
+            if (selectFile == null)
             {
-                // 看劇模式：先顯示封面選集畫面，讓使用者挑要看哪一集
+                // 先顯示縮圖牆（照片）／封面選集（影片），讓使用者挑
                 PopulateEpisodes();
                 ShowEpisodePicker();
                 return;
@@ -675,7 +694,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         else
         {
             EpisodesBtn.Visibility = Visibility.Collapsed;
-            EpisodePicker.Visibility = Visibility.Collapsed;
+            HideGallery();
             StopVideo();
             MainImage.Source = null;
             MainImage.Visibility = Visibility.Visible;
@@ -702,20 +721,69 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (pending.Count == 0)
             return;
 
-        Task.Run(() =>
+        Task.Run(async () =>
         {
-            foreach (bool cacheOnly in new[] { true, false })
-                foreach (var it in pending)
+            // 第一輪：只撈 Windows 快取（瞬間）
+            foreach (var it in pending)
+            {
+                if (token != _thumbToken) return;
+                if (it.Thumb != null) continue;
+                var bmp = ShellThumb.Get(it.Path, 320, cacheOnly: true);
+                if (bmp != null)
+                    _ = Dispatcher.BeginInvoke(() => it.Thumb ??= bmp);
+            }
+            // 第二輪：沒快取的自己產生。照片用內建解碼器（RAW 取內嵌小預覽），3 個並行；
+            // 影片交給 Shell 產生（開始播放時會取消，把磁碟讓給影片）
+            using var gate = new System.Threading.SemaphoreSlim(3);
+            var tasks = pending.Where(it => it.Thumb == null).Select(async it =>
+            {
+                await gate.WaitAsync();
+                try
                 {
-                    if (token != _thumbToken)
-                        return; // 開始播放時會取消，把磁碟讓給影片
-                    if (it.Thumb != null)
-                        continue;
-                    var bmp = ShellThumb.Get(it.Path, 320, cacheOnly);
-                    if (bmp != null)
-                        Dispatcher.BeginInvoke(() => it.Thumb ??= bmp);
+                    if (token != _thumbToken || it.Thumb != null) return;
+                    System.Windows.Media.Imaging.BitmapSource? bmp = null;
+                    try
+                    {
+                        bmp = it.IsVideo ? ShellThumb.Get(it.Path, 320) : ImageLoader.LoadThumbnail(it.Path, 320);
+                    }
+                    catch { }
+                    if (bmp != null && token == _thumbToken)
+                        await Dispatcher.BeginInvoke(() => it.Thumb ??= bmp);
                 }
+                finally { gate.Release(); }
+            }).ToList();
+            await Task.WhenAll(tasks);
         });
+    }
+
+    /// <summary>目前模式對應的縮圖牆容器</summary>
+    Border GalleryHost => _mode == AppMode.Photo ? PhotoGrid : EpisodePicker;
+
+    void HideGallery()
+    {
+        PhotoGrid.Visibility = Visibility.Collapsed;
+        EpisodePicker.Visibility = Visibility.Collapsed;
+    }
+
+    System.Windows.Threading.DispatcherTimer? _loadingTimer;
+
+    /// <summary>載入指示：開始後 200ms 才顯示（快速載入不閃爍），完成即隱藏</summary>
+    void ShowLoading(bool on)
+    {
+        if (_loadingTimer == null)
+        {
+            _loadingTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _loadingTimer.Tick += (_, _) =>
+            {
+                _loadingTimer.Stop();
+                LoadingRing.Visibility = Visibility.Visible;
+            };
+        }
+        _loadingTimer.Stop();
+        if (on)
+            _loadingTimer.Start();
+        else
+            LoadingRing.Visibility = Visibility.Collapsed;
     }
 
     void ShowEpisodePicker()
@@ -726,12 +794,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         MainImage.Source = null;
         MainImage.Visibility = Visibility.Collapsed;
         PlaceholderText.Visibility = Visibility.Collapsed;
-        // 影片視窗保持存在（選集畫面疊在上面）——之後點封面播放不用重建視窗，才不會卡
-        VideoViewControl.Visibility = Visibility.Visible;
-        EpisodePicker.Visibility = Visibility.Visible;
+        ShowLoading(false);
+        if (_mode == AppMode.Video)
+        {
+            // 影片視窗保持存在（選集畫面疊在上面）——之後點封面播放不用重建視窗，才不會卡
+            VideoViewControl.Visibility = Visibility.Visible;
+        }
+        GalleryHost.Visibility = Visibility.Visible;
         ClearInfo();
-        StatusLabel.Text = string.Format(Loc.T("PickEpisode"), _files.Count);
-        LoadThumbsAsync(); // 續載還沒好的封面
+        StatusLabel.Text = string.Format(Loc.T(_mode == AppMode.Photo ? "PickPhoto" : "PickEpisode"), _files.Count);
+        LoadThumbsAsync(); // 續載還沒好的縮圖
     }
 
     void EpisodesBtn_Click(object sender, RoutedEventArgs e) => ShowEpisodePicker();
@@ -740,7 +812,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if ((sender as FrameworkElement)?.Tag is not EpisodeItem ep)
             return;
-        EpisodePicker.Visibility = Visibility.Collapsed;
+        HideGallery();
         var item = _files.FirstOrDefault(f => string.Equals(f.Path, ep.Path, StringComparison.OrdinalIgnoreCase));
         if (item != null)
         {
@@ -769,7 +841,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (FileList.SelectedItem is not FileItem item)
             return;
 
-        EpisodePicker.Visibility = Visibility.Collapsed;
+        HideGallery();
         int token = ++_loadToken;
         string path = item.Path;
         StatusLabel.Text = string.Format(Loc.T("Loading"), item.Name);
@@ -782,6 +854,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         StopVideo();
         MainImage.Visibility = Visibility.Visible;
+        ShowLoading(true);
 
         try
         {
@@ -793,6 +866,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             });
 
             if (token != _loadToken) return; // 使用者已切到別張
+            ShowLoading(false);
 
             PlaceholderText.Visibility = Visibility.Collapsed;
             ResetZoom();
@@ -803,6 +877,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         catch (Exception ex)
         {
             if (token != _loadToken) return;
+            ShowLoading(false);
             MainImage.Source = null;
             PlaceholderText.Visibility = Visibility.Visible;
             PlaceholderText.Text = Loc.T("CantReadPhoto");
@@ -813,6 +888,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     async Task ShowVideoAsync(FileItem item, int token)
     {
+        if (!await EnsurePlayerAsync() || token != _loadToken)
+            return;
         if (_libVLC == null || _player == null)
         {
             StatusLabel.Text = Loc.T("PlayerNotInit");

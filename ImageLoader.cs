@@ -117,16 +117,101 @@ public static class ImageLoader
         return bmp;
     }
 
-    static BitmapSource FromJpegBytes(byte[] data, Rotation rotation)
+    static BitmapSource FromJpegBytes(byte[] data, Rotation rotation, int decodePixelWidth = 0)
     {
         var bi = new BitmapImage();
         bi.BeginInit();
         bi.StreamSource = new MemoryStream(data);
         bi.CacheOption = BitmapCacheOption.OnLoad;
         bi.Rotation = rotation;
+        if (decodePixelWidth > 0)
+            bi.DecodePixelWidth = decodePixelWidth;
         bi.EndInit();
         bi.Freeze();
         return bi;
+    }
+
+    // ---------- 縮圖（縮圖牆用，以小尺寸解碼求快） ----------
+
+    /// <summary>載入縮圖：RAW 取內嵌小預覽、一般圖片以縮小尺寸解碼；回傳前已 Freeze</summary>
+    public static BitmapSource LoadThumbnail(string path, int maxPx = 320)
+    {
+        BitmapSource result = IsRaw(path) ? LoadRawThumbnail(path, maxPx) : LoadStandardThumbnail(path, maxPx);
+        if (!result.IsFrozen && result.CanFreeze)
+            result.Freeze();
+        return result;
+    }
+
+    static BitmapSource LoadStandardThumbnail(string path, int maxPx)
+    {
+        try
+        {
+            var bi = new BitmapImage();
+            bi.BeginInit();
+            bi.UriSource = new Uri(path);
+            bi.CacheOption = BitmapCacheOption.OnLoad;
+            bi.DecodePixelWidth = maxPx; // 解碼器直接輸出小圖，比讀全圖再縮快很多
+            bi.Rotation = OrientationToRotation(ExifService.GetOrientation(path));
+            bi.EndInit();
+            bi.Freeze();
+            return bi;
+        }
+        catch
+        {
+            using var mi = new ImageMagick.MagickImage(path);
+            mi.AutoOrient();
+            mi.Thumbnail((uint)maxPx, (uint)maxPx);
+            return FromJpegBytes(mi.ToByteArray(ImageMagick.MagickFormat.Bmp), Rotation.Rotate0);
+        }
+    }
+
+    static BitmapSource LoadRawThumbnail(string path, int maxPx)
+    {
+        using RawContext ctx = RawContext.OpenFile(path);
+
+        // 內嵌預覽通常有大小兩張（如 RAF 160x120 + 全尺寸）：挑「夠大之中最小」的那張
+        byte[]? bigEnough = null, fallback = null;
+        int bigEnoughLong = int.MaxValue, fallbackLong = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            try
+            {
+                ctx.UnpackThumbnail(i);
+                using ProcessedImage t = ctx.MakeDcrawMemoryThumbnail();
+                if (t.ImageType != ProcessedImageType.Jpeg)
+                    continue;
+                int longEdge = Math.Max(t.Width, t.Height);
+                if (longEdge >= maxPx && longEdge < bigEnoughLong)
+                {
+                    bigEnoughLong = longEdge;
+                    bigEnough = t.AsSpan<byte>().ToArray();
+                }
+                else if (longEdge < maxPx && longEdge > fallbackLong)
+                {
+                    fallbackLong = longEdge;
+                    fallback = t.AsSpan<byte>().ToArray();
+                }
+            }
+            catch
+            {
+                break;
+            }
+        }
+        byte[]? jpeg = bigEnough ?? fallback;
+        if (jpeg != null)
+            return FromJpegBytes(jpeg, OrientationToRotation(ExifService.GetOrientation(path)), maxPx);
+
+        // 沒有內嵌預覽 → 半尺寸解碼後縮小
+        ctx.Unpack();
+        ctx.DcrawProcess(c => c.HalfSize = true);
+        using ProcessedImage img = ctx.MakeDcrawMemoryImage();
+        int stride = img.Width * 3;
+        var full = BitmapSource.Create(img.Width, img.Height, 96, 96,
+            PixelFormats.Rgb24, null, img.DataPointer, img.Height * stride, stride);
+        double scale = Math.Min(1.0, (double)maxPx / Math.Max(img.Width, img.Height));
+        var small = new TransformedBitmap(full, new ScaleTransform(scale, scale));
+        small.Freeze();
+        return small;
     }
 
     static Rotation OrientationToRotation(int orientation) => orientation switch

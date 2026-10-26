@@ -11,6 +11,9 @@
     <Product>wphoto</Product>
     <Company>lintaixu</Company>
     <Version>1.2.0</Version>
+    <!-- 發行：ReadyToRun 預編譯縮短 JIT 時間；以資料夾形式發行（單檔 438MB 在 HDD 冷啟動要 20 秒） -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <SatelliteResourceLanguages>en;zh-Hant;zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +22,7 @@
 
   <ItemGroup>
     <PackageReference Include="LibVLCSharp.WPF" Version="3.10.0" />
-    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.16.0" />
+    <PackageReference Include="Magick.NET-Q8-x64" Version="14.17.1" />
     <PackageReference Include="MetadataExtractor" Version="2.9.3" />
     <PackageReference Include="Sdcb.LibRaw" Version="0.21.1.7" />
     <PackageReference Include="Sdcb.LibRaw.runtime.win64" Version="0.21.1" />
