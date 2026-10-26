@@ -25,16 +25,16 @@ enum ImageLoading {
         return UIImage(cgImage: cg)
     }
 
-    /// 檢視用大圖：以最長邊 maxPixel 解碼（RAW 走 Apple 的 RAW 管線）
-    static func fullImage(url: URL, maxPixel: Int = 3200) -> UIImage? {
+    /// 檢視用大圖：以最長邊 maxPixel 解碼（RAW 走 Apple 的 RAW 管線）；maxPixel 為 nil 時用原始解析度
+    static func fullImage(url: URL, maxPixel: Int? = nil) -> UIImage? {
         guard let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
         else { return nil }
-        let opts: [CFString: Any] = [
+        var opts: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
             kCGImageSourceShouldCacheImmediately: true,
         ]
+        if let maxPixel { opts[kCGImageSourceThumbnailMaxPixelSize] = maxPixel }
         guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
         return UIImage(cgImage: cg)
     }

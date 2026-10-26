@@ -79,34 +79,74 @@ struct PhotoDetailView: View {
 struct PhotoPage: View {
     let file: MediaFile
     @State private var image: UIImage?
+    /// 原檔比畫面小、已經是原始解析度：畫面再變大也不用重讀
+    @State private var isOriginalSize = false
     @State private var failed = false
+    @Environment(\.displayScale) private var displayScale
+
+    private struct LoadKey: Equatable {
+        let url: URL
+        let pixels: Int
+    }
 
     var body: some View {
-        ZStack {
-            if let image {
-                ZoomableImageView(image: image)
-                    .ignoresSafeArea()
-            } else if failed {
-                VStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle").font(.largeTitle)
-                    Text("CantReadPhoto")
+        GeometryReader { geo in
+            let pixels = Self.screenPixels(geo.size, displayScale)
+            ZStack {
+                if let image {
+                    ZoomableImageView(image: image, url: file.url)
+                } else if failed {
+                    VStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle").font(.largeTitle)
+                        Text("CantReadPhoto")
+                    }
+                    .foregroundStyle(.secondary)
+                } else {
+                    // 先顯示縮圖當佔位，避免黑一片
+                    if let thumb = ThumbnailCache.shared.cached(file.url) {
+                        Image(uiImage: thumb).resizable().scaledToFit()
+                    }
+                    ProgressView().tint(.white)
                 }
-                .foregroundStyle(.secondary)
-            } else {
-                // 先顯示縮圖當佔位，避免黑一片
-                if let thumb = ThumbnailCache.shared.cached(file.url) {
-                    Image(uiImage: thumb).resizable().scaledToFit().ignoresSafeArea()
-                }
-                ProgressView().tint(.white)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .task(id: LoadKey(url: file.url, pixels: pixels)) {
+                await load(pixels: pixels)
             }
         }
-        .task(id: file.url) {
-            let url = file.url
-            let loaded = await Task.detached(priority: .userInitiated) {
-                ImageLoading.fullImage(url: url)
-            }.value
-            if let loaded { image = loaded } else { failed = true }
+        .ignoresSafeArea()
+    }
+
+    /// 依畫面實際像素解碼（4K 外接螢幕、全螢幕都清楚）；畫面變大時重讀，變小則沿用
+    private func load(pixels: Int) async {
+        guard pixels > 0 else { return }
+        if let image {
+            if isOriginalSize || Self.longEdge(image) >= pixels { return }
+            // 拖曳調整視窗大小時會連續觸發，等停下來再讀
+            try? await Task.sleep(for: .milliseconds(300))
+            if Task.isCancelled { return }
         }
+        let url = file.url
+        let loaded = await Task.detached(priority: .userInitiated) {
+            ImageLoading.fullImage(url: url, maxPixel: pixels)
+        }.value
+        if Task.isCancelled { return }
+        if let loaded {
+            image = loaded
+            isOriginalSize = Self.longEdge(loaded) < pixels
+        } else if image == nil {
+            failed = true
+        }
+    }
+
+    /// 畫面長邊的實際像素，進位到 512 的倍數，視窗稍微調整大小時不會一直重讀
+    private static func screenPixels(_ size: CGSize, _ scale: CGFloat) -> Int {
+        let px = Int((max(size.width, size.height) * scale).rounded(.up))
+        return (px + 511) / 512 * 512
+    }
+
+    private static func longEdge(_ image: UIImage) -> Int {
+        Int(max(image.size.width, image.size.height) * image.scale)
     }
 }
 
