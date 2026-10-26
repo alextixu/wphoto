@@ -3,7 +3,11 @@ import UniformTypeIdentifiers
 
 /// 照片模式：從「檔案」選資料夾 → 縮圖牆 → 點開檢視
 struct PhotoModeView: View {
+    /// 從首頁「最近位置」點進來時，直接開這個常用位置
+    var initialLocation: FolderSession.SavedFolder? = nil
+
     @StateObject private var session = FolderSession(kind: .photo)
+    @State private var didOpenInitial = false
     @State private var showPicker = false
     @State private var typeFilter: String? = nil
     @State private var selected: MediaFile?
@@ -100,6 +104,12 @@ struct PhotoModeView: View {
         .onChange(of: session.stack) { _, _ in typeFilter = nil }
         .fullScreenCover(item: $selected) { file in
             PhotoDetailView(files: visibleFiles, current: file)
+        }
+        .task {
+            // 只在第一次出現時開（從檢視畫面回來不會再開一次）
+            guard !didOpenInitial, let item = initialLocation else { return }
+            didOpenInitial = true
+            session.openSaved(session.saved.first { $0.id == item.id } ?? item)
         }
         .alert("Error", isPresented: Binding(get: { session.errorMessage != nil },
                                              set: { if !$0 { session.errorMessage = nil } })) {

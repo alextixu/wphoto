@@ -119,9 +119,9 @@ Why a folder instead of a single-file exe: a 438 MB single file must be read com
 
 ## iOS · iPhone 版
 
-A native SwiftUI companion app lives in [`ios/`](ios/) — same two modes, opens folders from the Files app (iCloud Drive, On My iPhone, or a NAS connected in Files), Apple-native RAW/HEIF/HDR decoding. See [ios/README.md](ios/README.md) for building with Xcode.
+A native SwiftUI companion app lives in [`ios/`](ios/) — same two modes, opens folders from the Files app (iCloud Drive, On My iPhone, or a NAS connected in Files), Apple-native RAW/HEIF/HDR decoding, plus a movie poster wall, resume playback and Continue Watching on the home screen. See [ios/README.md](ios/README.md) for building with Xcode.
 
-原生 SwiftUI 的 iPhone 版在 [`ios/`](ios/)：同樣兩種模式，資料夾從「檔案」App 開啟（iCloud／本機／檔案中連接的 NAS），RAW、HEIF、HDR 走 Apple 原生解碼。建置方式見 [ios/README.md](ios/README.md)。
+原生 SwiftUI 的 iPhone 版在 [`ios/`](ios/)：同樣兩種模式，資料夾從「檔案」App 開啟（iCloud／本機／檔案中連接的 NAS），RAW、HEIF、HDR 走 Apple 原生解碼；另有電影海報牆、續看進度與首頁的「繼續觀看」。建置方式見 [ios/README.md](ios/README.md)。
 
 ## Tech stack · 技術
 

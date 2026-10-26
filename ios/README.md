@@ -8,22 +8,41 @@ Native SwiftUI companion to the Windows app. Same two modes, same dark look. Pho
 
 Both modes pick a folder through the Files app — **iCloud Drive, On My iPhone, or a NAS you've connected in Files (SMB)**. Every folder you open is kept in a **Saved Locations** list (up to 30 per mode, most recent first), so next time one tap opens it — swipe left or long-press to rename or remove. Nothing is opened automatically at launch, and opening a saved location or scanning a folder can always be cancelled, so an unreachable NAS can never leave the app stuck. The folder button at the top returns to the list.
 
-Folders open **one level at a time**, like the Files app: subfolders are shown as tiles above the photos or videos, tap one to go in, and the back button (⌘↑ on a keyboard) goes up a level. Only the current level is read, so even a large NAS folder such as a whole movie library opens quickly, and levels you've already visited open instantly. Pull down to refresh. In Theater mode, `Subs` / `Subtitles` folders are hidden — their subtitles are picked up automatically when you play the video.
+Folders open **one level at a time**, like the Files app: subfolders are shown above the photos or videos (as tiles in Photo mode, as a poster wall in Theater mode), tap one to go in, and the back button (⌘↑ on a keyboard) goes up a level. Only the current level is read, so even a large NAS folder such as a whole movie library opens quickly, and levels you've already visited open instantly. Pull down to refresh. In Theater mode, `Subs` / `Subtitles` folders are hidden — their subtitles are picked up automatically when you play the video.
 
 兩種模式都透過「檔案」App 選資料夾——**iCloud Drive、我的 iPhone、或在「檔案」裡連接的 NAS (SMB)** 都可以。開過的資料夾都會記在「**常用位置**」清單（每個模式最多 30 個，最近開的在前），下次點一下就能開；向左滑或長按可以重新命名、移除。App 啟動時不會自動開啟任何位置，開啟常用位置與掃描資料夾時都可以取消，所以 NAS 沒連線時不會卡住。右上角的資料夾按鈕可以回到清單。
 
-資料夾像「檔案」App 一樣**一層一層進去**：子資料夾以方塊顯示在照片或影片上方，點一下進去，左上角的返回鍵（鍵盤 ⌘↑）回上一層。每次只讀目前這一層，所以就算是整個電影庫這種 NAS 大資料夾也能很快打開，走過的層再回去會直接顯示。往下拉可以重新整理。看劇模式不顯示 `Subs`、`Subtitles` 資料夾——播放時會自動去裡面找字幕。
+資料夾像「檔案」App 一樣**一層一層進去**：子資料夾顯示在照片或影片上方（照片模式是方塊，看劇模式是海報牆），點一下進去，左上角的返回鍵（鍵盤 ⌘↑）回上一層。每次只讀目前這一層，所以就算是整個電影庫這種 NAS 大資料夾也能很快打開，走過的層再回去會直接顯示。往下拉可以重新整理。看劇模式不顯示 `Subs`、`Subtitles` 資料夾——播放時會自動去裡面找字幕。
 
 > **NAS / iCloud note.** iOS cannot stream a file from a Files provider: a video that isn't on the iPhone yet is **downloaded in full** before it plays (the player shows "Downloading…" with a Cancel button, and the phone needs enough free space). Episode covers and durations are only read for videos that are already local — browsing a NAS season never downloads whole episodes; not-yet-downloaded ones show a cloud badge. Photo thumbnails still load the file the first time a cell appears.
 >
 > **NAS／iCloud 說明**：iOS 無法從「檔案」的雲端項目邊下載邊播，還不在 iPhone 上的影片會**先完整下載**再播放（畫面顯示「下載中…」，可按取消；手機需要足夠空間）。封面與時長只讀取已在本機的影片，瀏覽 NAS 整季不會把每集都下載下來；尚未下載的集數會顯示雲朵圖示。照片縮圖則會在格子第一次出現時讀取檔案。
+
+## Home screen · 首頁
+
+Below the two mode cards the home screen lists **Continue Watching** (videos you stopped part-way, with a progress bar and where they live) and **Recent Locations** (the latest saved locations from both modes). Tapping a video opens its saved location, goes into the same subfolder and resumes playback; tapping a location opens it directly. Both lists only open something when you tap — launching the app never connects to a NAS. Long-press a Continue Watching item to remove it.
+
+首頁的模式卡片下方列出「**繼續觀看**」（看到一半的影片，附進度條與所在位置）和「**最近位置**」（照片、看劇兩個模式最近開過的位置）。點影片會開啟它所在的常用位置、進到同一層並從上次的位置繼續播放；點位置則直接打開。兩個清單都是點了才開，啟動 App 不會自動連 NAS。長按「繼續觀看」的項目可以移除。
+
+## Movie poster wall · 電影海報牆
+
+In Theater mode, subfolders are shown as **portrait posters (2:3) with the title below**. The cover is the first match of `poster` / `folder` / `cover` / `fanart` (also Kodi-style `Movie-poster.jpg`), then any other image in the folder, and finally a frame from a video. Only folders visible on screen are read (at most four at a time), and their contents are cached while the cover is looked up — tapping a poster opens the folder without waiting for the NAS again. Folders in Photo mode are unchanged.
+
+看劇模式的子資料夾改成**直式海報（2:3），下面顯示片名**。封面依序找資料夾裡的 `poster`／`folder`／`cover`／`fanart`（也認 Kodi 的「片名-poster.jpg」），再來是其他圖片，最後用影片截一格。只讀畫面上看得到的資料夾（同時最多四個），讀封面時順便把那一層的內容存進快取，點進去就不用再等 NAS。照片模式的資料夾維持原樣。
+
+## Resume playback · 續看進度
+
+Both players (AVPlayer and VLC) remember where you stopped. Opening the video again continues from there and shows a **Start Over** button for a few seconds. Videos watched for less than 30 seconds, or stopped in the last 5 %, start from the beginning. Episode cards show a progress bar for videos in progress and a check mark once you've watched to the end.
+
+AVPlayer 和 VLC 兩種播放器都會記住看到哪裡。重新打開時從上次的位置繼續，畫面上會出現幾秒「**從頭播放**」按鈕。看不到 30 秒、或看到最後 5% 的影片從頭播。影片卡片底部顯示看到一半的進度條，看完的打勾。
 
 ## Features · 功能
 
 | Photo mode | Theater mode |
 |---|---|
 | RAW / JPEG / HEIF / TIFF via ImageIO (Apple RAW pipeline) | MP4 / MOV / M4V via AVPlayer; MKV / WebM / AVI / MTS / M2TS / TS / WMV / FLV / 3GP via VLCKit |
-| Thumbnail grid, type filter (only types present in the folder) | Episode grid with cover frames and duration |
+| Thumbnail grid, type filter (only types present in the folder) | Episode grid with cover frames and duration; progress bar and check mark |
+| | **Poster wall** for subfolders; **resume** where you stopped |
 | Pinch-zoom, double-tap, swipe between photos | AVPlayer: native controls, 0.5×–2× speed, subtitle/audio tracks, PiP, AirPlay |
 | Shooting info sheet: camera, lens, ISO, shutter, aperture, focal length, GPS… | VLC player: scrubber, ±10 s, 0.5×–2× speed, subtitle / audio track menus, fit / fill, auto-hiding controls |
 | | External subtitles (`.srt` `.ass` `.ssa` `.sub` `.vtt`) next to the video or in a `Subs` / `Subtitles` folder |

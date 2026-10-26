@@ -80,8 +80,8 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
 
     // MARK: - 開始 / 結束
 
-    /// drawable 必須是 UIView，而且要在 play() 之前設定
-    func start(url: URL, subtitles: [URL], drawable: UIView) {
+    /// drawable 必須是 UIView，而且要在 play() 之前設定；startMs 是續播位置
+    func start(url: URL, subtitles: [URL], drawable: UIView, startMs: Int? = nil) {
         guard !started, !tornDown else { return }
         started = true
         videoURL = url
@@ -89,7 +89,8 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         // 交給 VLC 的外掛字幕只剩 App 讀不了的格式（.sub），不自動開啟，要使用者自己選
         defaultSubtitle = nil
         player.drawable = drawable
-        player.media = makeMedia(url: url)
+        player.media = makeMedia(url: url, startMs: startMs)
+        if let startMs, startMs > 0 { currentMs = startMs }
         // 外掛字幕等開始播放後才加（見 addSubtitlesIfNeeded）
         player.play()
     }
@@ -251,8 +252,12 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
 
     /// 每次（重新）開播都用新的 VLCMedia：播放中加入的外掛字幕會被 libvlc 記在 media 上，
     /// 沿用舊的 media 重播時會全部以「使用者指定」的最高優先權載入，隨便選一個當預設。
-    private func makeMedia(url: URL) -> VLCMedia {
+    private func makeMedia(url: URL, startMs: Int? = nil) -> VLCMedia {
         let media = VLCMedia(url: url)
+        if let startMs, startMs > 0 {
+            // 續播：直接從這個位置開檔（比開播後再跳轉快，也不會先閃一下片頭）
+            media.addOption(":start-time=\(Double(startMs) / 1000)")
+        }
         if let encoding = Self.subtitleEncoding {
             // 非 UTF-8 的中文字幕（台灣常見 Big5、中國常見 GBK）；UTF-8 字幕仍會自動辨識
             media.addOption(":subsdec-encoding=\(encoding)")

@@ -89,3 +89,13 @@
 "Locations" = "位置";
 "OpeningLocation" = "正在開啟「%@」…";
 "UpOneLevel" = "上一層";
+
+/* 續看進度 · 首頁 */
+"ResumedFrom" = "從 %@ 繼續播放";
+"StartOver" = "從頭播放";
+"Watched" = "已看完";
+"ContinueWatching" = "繼續觀看";
+"RecentLocations" = "最近位置";
+"RemoveFromContinueWatching" = "從「繼續觀看」移除";
+"ContinueLocationMissing" = "這部影片所在的位置已經不在常用位置裡，請從看劇模式重新開啟它的資料夾。";
+"ContinueVideoMissing" = "這部影片已經不在那個資料夾裡，可能改名或搬走了。";

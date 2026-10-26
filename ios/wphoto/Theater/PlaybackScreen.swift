@@ -5,8 +5,11 @@ import SwiftUI
 ///  - MP4 / M4V / MOV、沒有同名外掛字幕、AVPlayer 可播 → AVPlayer（保留 HDR、杜比視界、子母畫面、AirPlay）
 ///  - 其他容器（MKV、AVI、TS…）或有同名外掛字幕 → VLC
 ///  - AVPlayer 播放失敗 → 自動改用 VLC
+/// 看到哪裡記在 WatchProgressStore：下次從那裡繼續（看不到 30 秒或已看到最後 5% 的從頭播）。
 struct PlaybackScreen: View {
     let file: MediaFile
+    /// 從哪個常用位置、哪一層開的（首頁「繼續觀看」用）
+    var origin: PlaybackOrigin? = nil
 
     @StateObject private var preparer = PlaybackPreparer()
     @Environment(\.dismiss) private var dismiss
@@ -24,18 +27,24 @@ struct PlaybackScreen: View {
             case .ready(let plan):
                 switch plan.engine {
                 case .avPlayer:
-                    PlayerScreen(url: plan.videoURL) {
-                        preparer.fallBackToVLC()
-                    }
+                    PlayerScreen(url: plan.videoURL, resumeMs: plan.resumeMs, onProgress: recordProgress,
+                                 onFailure: { preparer.fallBackToVLC() })
                 case .vlc:
                     VLCPlayerScreen(title: file.url.lastPathComponent,
                                     url: plan.videoURL,
-                                    subtitles: plan.subtitleURLs)
+                                    subtitles: plan.subtitleURLs,
+                                    resumeMs: plan.resumeMs,
+                                    onProgress: recordProgress)
                 }
             }
         }
         .task { await preparer.prepare(file) }
         .onDisappear { preparer.release() }
+    }
+
+    /// 進度以原本的檔案為準（不是下載後的暫存位置）
+    private func recordProgress(positionMs: Int, durationMs: Int) {
+        WatchProgressStore.shared.record(url: file.url, positionMs: positionMs, durationMs: durationMs, origin: origin)
     }
 
     private func preparing(downloading: Bool) -> some View {
@@ -95,6 +104,8 @@ final class PlaybackPreparer: ObservableObject {
         let videoURL: URL
         let subtitleURLs: [URL]
         let engine: Engine
+        /// 續播位置（毫秒）；nil = 從頭播
+        let resumeMs: Int?
     }
 
     enum Phase {
@@ -141,7 +152,8 @@ final class PlaybackPreparer: ObservableObject {
                 }
             }
             try Task.checkCancellation()
-            phase = .ready(Plan(videoURL: video.url, subtitleURLs: subtitleURLs, engine: engine))
+            let resumeMs = WatchProgressStore.shared.resumePositionMs(for: file.url)
+            phase = .ready(Plan(videoURL: video.url, subtitleURLs: subtitleURLs, engine: engine, resumeMs: resumeMs))
         } catch is CancellationError {
             // 使用者按了取消、畫面已關閉
         } catch {
@@ -154,7 +166,7 @@ final class PlaybackPreparer: ObservableObject {
     /// AVPlayer 無法播放（例如 MP4 裡是不支援的編碼）→ 改用 VLC
     func fallBackToVLC() {
         guard case .ready(let plan) = phase, plan.engine == .avPlayer else { return }
-        phase = .ready(Plan(videoURL: plan.videoURL, subtitleURLs: plan.subtitleURLs, engine: .vlc))
+        phase = .ready(Plan(videoURL: plan.videoURL, subtitleURLs: plan.subtitleURLs, engine: .vlc, resumeMs: plan.resumeMs))
     }
 
     func release() {

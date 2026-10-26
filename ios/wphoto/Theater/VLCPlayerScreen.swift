@@ -7,6 +7,9 @@ struct VLCPlayerScreen: View {
     let title: String
     let url: URL
     let subtitles: [URL]
+    /// 續播位置（毫秒）；nil = 從頭播
+    var resumeMs: Int? = nil
+    var onProgress: ProgressReporter = { _, _ in }
 
     @StateObject private var controller = VLCPlayerController()
     @StateObject private var subtitleModel = SubtitleModel()
@@ -19,6 +22,7 @@ struct VLCPlayerScreen: View {
     @State private var scrubFraction: Double?
     /// 每次操作 +1，重新起算自動隱藏
     @State private var interaction = 0
+    @State private var showResume = false
 
     private struct AutoHideKey: Equatable {
         var interaction: Int
@@ -34,7 +38,8 @@ struct VLCPlayerScreen: View {
 
             // 文字字幕由 App 顯示；VLC 只拿到它自己才讀得了的外掛字幕（.sub）
             VLCVideoSurface(controller: controller, url: url,
-                            subtitles: subtitles.filter { !SubtitleFileParser.canParse($0) })
+                            subtitles: subtitles.filter { !SubtitleFileParser.canParse($0) },
+                            startMs: resumeMs)
                 .ignoresSafeArea()
 
             // 主字幕與第二字幕（App 用系統字型畫，中文不會變方格；不攔截點擊）
@@ -61,6 +66,19 @@ struct VLCPlayerScreen: View {
                 errorOverlay
             }
 
+            if showResume, let resumeMs {
+                VStack {
+                    ResumeBanner(positionMs: resumeMs) {
+                        controller.seek(toMs: 0)
+                        withAnimation { showResume = false }
+                        showControls()
+                    }
+                    .padding(.top, 64)
+                    Spacer()
+                }
+                .transition(.opacity)
+            }
+
             keyboardShortcuts
         }
         .statusBarHidden(!controlsVisible)
@@ -70,7 +88,10 @@ struct VLCPlayerScreen: View {
             await autoHide()
         }
         .onChange(of: controller.hasEnded) { _, ended in
-            if ended { showControls() }
+            if ended {
+                showControls()
+                reportProgress()
+            }
         }
         // 播放中不讓螢幕自動變暗、鎖定（AVPlayer 會自己處理，VLC 不會）；暫停或關閉時還原
         .onChange(of: controller.isPlaying) { _, playing in
@@ -96,7 +117,22 @@ struct VLCPlayerScreen: View {
             subtitleModel.currentTimeMs = { [weak controller] in controller?.liveTimeMs ?? 0 }
             await subtitleModel.configure(videoURL: url, subtitleFiles: subtitles)
         }
+        // 看到哪裡：每 5 秒記一次，關閉時再記一次
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                if Task.isCancelled { break }
+                reportProgress()
+            }
+        }
+        .task {
+            guard resumeMs != nil else { return }
+            showResume = true
+            try? await Task.sleep(for: .seconds(6))
+            withAnimation { showResume = false }
+        }
         .onDisappear {
+            reportProgress()
             subtitleModel.stop()
             controller.teardown()
             UIApplication.shared.isIdleTimerDisabled = false
@@ -425,6 +461,16 @@ struct VLCPlayerScreen: View {
         return VLCTrackLabel.title(libvlcName: track.name, number: index + 1, format: format)
     }
 
+    // MARK: - 續看進度
+
+    private func reportProgress() {
+        if controller.hasEnded, controller.durationMs > 0 {
+            onProgress(controller.durationMs, controller.durationMs)
+        } else if !controller.isOpening, !controller.hasError {
+            onProgress(controller.currentMs, controller.durationMs)
+        }
+    }
+
     // MARK: - 自動隱藏
 
     private func toggleControls() {
@@ -634,6 +680,7 @@ struct VLCVideoSurface: UIViewRepresentable {
     let controller: VLCPlayerController
     let url: URL
     let subtitles: [URL]
+    var startMs: Int? = nil
 
     func makeUIView(context: Context) -> VLCVideoContainerView {
         let container = VLCVideoContainerView()
@@ -641,7 +688,7 @@ struct VLCVideoSurface: UIViewRepresentable {
         container.onSizeChange = { [weak controller] size in
             controller?.updateViewSize(size)
         }
-        controller.start(url: url, subtitles: subtitles, drawable: container.drawable)
+        controller.start(url: url, subtitles: subtitles, drawable: container.drawable, startMs: startMs)
         return container
     }
 

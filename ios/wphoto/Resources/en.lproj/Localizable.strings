@@ -89,3 +89,13 @@
 "Locations" = "Locations";
 "OpeningLocation" = "Opening “%@”…";
 "UpOneLevel" = "Up One Level";
+
+/* Resume playback · home screen */
+"ResumedFrom" = "Resuming from %@";
+"StartOver" = "Start Over";
+"Watched" = "Watched";
+"ContinueWatching" = "Continue Watching";
+"RecentLocations" = "Recent Locations";
+"RemoveFromContinueWatching" = "Remove from Continue Watching";
+"ContinueLocationMissing" = "This video's location is no longer in Saved Locations. Open its folder again from Theater Mode.";
+"ContinueVideoMissing" = "This video is no longer in that folder. It may have been renamed or moved.";

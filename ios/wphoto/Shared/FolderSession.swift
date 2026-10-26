@@ -11,7 +11,7 @@ final class FolderSession: ObservableObject {
     enum Kind: String { case photo, video }
 
     /// 常用位置：存資料夾的書籤（含存取權限），之後不必再從「檔案」選一次
-    struct SavedFolder: Codable, Identifiable, Equatable {
+    struct SavedFolder: Codable, Identifiable, Hashable {
         var id = UUID()
         var name: String
         /// 用來比對是不是同一個資料夾，以及顯示上一層資料夾名稱
@@ -39,6 +39,8 @@ final class FolderSession: ObservableObject {
     @Published private(set) var folders: [SubFolder] = []
     @Published private(set) var files: [MediaFile] = []
     @Published private(set) var isScanning = false
+    /// 畫面上的 folders / files 是哪一層讀出來的（讀完才設定；首頁「繼續觀看」等它讀好再播放）
+    @Published private(set) var loadedURL: URL?
     @Published var errorMessage: String?
     /// 常用位置（最近開啟的在前）
     @Published private(set) var saved: [SavedFolder] = []
@@ -58,6 +60,14 @@ final class FolderSession: ObservableObject {
     private struct Listing {
         var folders: [SubFolder] = []
         var files: [MediaFile] = []
+        /// 看劇模式才收集：這一層的圖片（海報牆找封面用）
+        var images: [URL] = []
+    }
+
+    /// 海報牆的封面來源
+    enum PosterSource {
+        case image(URL)
+        case video(MediaFile)
     }
 
     /// 看劇模式不列出字幕資料夾（播放時會自動去裡面找字幕）
@@ -70,7 +80,16 @@ final class FolderSession: ObservableObject {
         loadSaved()
     }
 
-    private var savedKey: String { "savedFolders.\(kind.rawValue)" }
+    private var savedKey: String { Self.savedKey(kind) }
+
+    nonisolated private static func savedKey(_ kind: Kind) -> String { "savedFolders.\(kind.rawValue)" }
+
+    /// 不開任何資料夾、只讀常用位置清單（首頁的「最近位置」用，不會連 NAS）
+    nonisolated static func savedFolders(kind: Kind) -> [SavedFolder] {
+        guard let data = UserDefaults.standard.data(forKey: savedKey(kind)),
+              let items = try? JSONDecoder().decode([SavedFolder].self, from: data) else { return [] }
+        return items
+    }
 
     /// 目前這一層的名稱
     var folderDisplayName: String {
@@ -85,10 +104,17 @@ final class FolderSession: ObservableObject {
         stack.count > 1 ? stack[stack.count - 2].lastPathComponent : ""
     }
 
+    /// 目前這一層在常用位置裡的路徑（看劇進度記下來，首頁「繼續觀看」才開得回同一層）
+    var playbackOrigin: PlaybackOrigin? {
+        guard let root = stack.first else { return nil }
+        return PlaybackOrigin(locationPath: root.standardizedFileURL.path,
+                              subfolders: stack.dropFirst().map(\.lastPathComponent))
+    }
+
     // MARK: - 開啟資料夾
 
-    /// 使用者剛從檔案選取器選到的資料夾
-    func open(_ url: URL) {
+    /// 使用者剛從檔案選取器選到的資料夾；subfolders 不是空的時直接進到那一層（首頁「繼續觀看」）
+    func open(_ url: URL, subfolders: [String] = []) {
         stopAccess()
         guard url.startAccessingSecurityScopedResource() else {
             errorMessage = String(localized: "AccessDenied")
@@ -97,10 +123,15 @@ final class FolderSession: ObservableObject {
         accessing = true
         scanGeneration += 1
         folderURL = url
-        stack = [url]
+        var chain = [url]
+        for name in subfolders {
+            chain.append(chain[chain.count - 1].appendingPathComponent(name, isDirectory: true))
+        }
+        stack = chain
         openingName = nil
         remember(url)
-        Task { await load(url) }
+        let target = chain[chain.count - 1]
+        Task { await load(target) }
     }
 
     /// 點進子資料夾
@@ -126,11 +157,13 @@ final class FolderSession: ObservableObject {
     func reload() async {
         guard let url = stack.last else { return }
         listings[url] = nil
+        // 海報牆預先讀過的子資料夾也一起重讀
+        for folder in folders { listings[folder.url] = nil }
         await load(url, showProgress: false)
     }
 
     /// 開啟常用位置：書籤在背景解析（NAS 沒連線時可能要等），期間可以取消
-    func openSaved(_ item: SavedFolder) {
+    func openSaved(_ item: SavedFolder, subfolders: [String] = []) {
         errorMessage = nil
         scanGeneration += 1
         let generation = scanGeneration
@@ -148,7 +181,7 @@ final class FolderSession: ObservableObject {
                 errorMessage = String(localized: "CannotOpenLocation")
                 return
             }
-            open(url)   // 會重新存書籤（書籤過期時也一併更新）
+            open(url, subfolders: subfolders)   // 會重新存書籤（書籤過期時也一併更新）
         }
     }
 
@@ -213,6 +246,70 @@ final class FolderSession: ObservableObject {
         listings = [:]
         folders = []
         files = []
+        loadedURL = nil
+    }
+
+    // MARK: - 海報牆
+
+    /// 讀子資料夾那一層找封面（海報只有出現在畫面上才會呼叫）。
+    /// 讀到的內容順便存進快取：點進去直接顯示，不必再等 NAS。
+    func posterSource(for folder: SubFolder) async -> PosterSource? {
+        let url = folder.url
+        let listing: Listing
+        if let cached = listings[url] {
+            listing = cached
+        } else {
+            let generation = scanGeneration
+            await acquirePosterSlot()
+            defer { releasePosterSlot() }
+            // 排隊期間海報已捲出畫面，或別的海報已經讀過這一層
+            if Task.isCancelled { return nil }
+            if let cached = listings[url] { return Self.poster(in: cached) }
+            let wantVideo = kind == .video
+            let result: Listing? = await Task.detached(priority: .utility) {
+                Self.list(url, video: wantVideo)
+            }.value
+            // 期間使用者已關閉或改開別的位置：這份結果不要了
+            guard generation == scanGeneration, let result else { return nil }
+            if listings[url] == nil { listings[url] = result }
+            listing = result
+        }
+        return Self.poster(in: listing)
+    }
+
+    /// 同時最多讀幾個海報資料夾：NAS 一次湧入太多請求反而更慢
+    private var posterSlots = 4
+    private var posterWaiters: [CheckedContinuation<Void, Never>] = []
+
+    private func acquirePosterSlot() async {
+        if posterSlots > 0 {
+            posterSlots -= 1
+            return
+        }
+        await withCheckedContinuation { posterWaiters.append($0) }
+    }
+
+    private func releasePosterSlot() {
+        if posterWaiters.isEmpty {
+            posterSlots += 1
+        } else {
+            posterWaiters.removeFirst().resume()
+        }
+    }
+
+    /// 封面順序：poster / folder / cover / fanart（也認 Kodi 的「片名-poster.jpg」），再來是其他圖片，最後用影片截一格
+    nonisolated private static func poster(in listing: Listing) -> PosterSource? {
+        let preferred = ["poster", "folder", "cover", "fanart"]
+        func base(_ url: URL) -> String { url.deletingPathExtension().lastPathComponent.lowercased() }
+        for name in preferred {
+            if let hit = listing.images.first(where: { base($0) == name }) { return .image(hit) }
+        }
+        for name in preferred {
+            if let hit = listing.images.first(where: { base($0).hasSuffix("-" + name) }) { return .image(hit) }
+        }
+        if let image = listing.images.first { return .image(image) }
+        if let video = listing.files.first { return .video(video) }
+        return nil
     }
 
     // MARK: - 讀取一層資料夾
@@ -222,6 +319,7 @@ final class FolderSession: ObservableObject {
             folders = cached.folders
             files = cached.files
             isScanning = false
+            loadedURL = url
             return
         }
         let generation = scanGeneration
@@ -244,6 +342,7 @@ final class FolderSession: ObservableObject {
         files = result?.files ?? []
         isScanning = false
         if result == nil { errorMessage = String(localized: "CannotOpenLocation") }
+        loadedURL = url
     }
 
     /// 只讀這一層：子資料夾＋媒體檔（讀不到時回傳 nil，例如 NAS 斷線）
@@ -273,6 +372,11 @@ final class FolderSession: ObservableObject {
                     continue
                 }
                 guard v.isRegularFile == true else { continue }
+                // 看劇模式：圖片不列出，只留給海報牆當封面
+                if video && MediaTypes.isPhoto(fileURL) {
+                    out.images.append(fileURL)
+                    continue
+                }
             }
             let ok = video ? MediaTypes.isVideo(fileURL) : MediaTypes.isPhoto(fileURL)
             guard ok else { continue }
@@ -281,6 +385,7 @@ final class FolderSession: ObservableObject {
         }
         out.folders.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         out.files.sort { $0.relativeName.localizedStandardCompare($1.relativeName) == .orderedAscending }
+        out.images.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         return out
     }
 }
