@@ -105,6 +105,12 @@
   - 首頁：`App/ModeSelectView.swift`；從首頁開回某一層用 `FolderSession.openSaved(_:subfolders:)`。
   - 等使用者說「可以推」才 commit、push、編 IPA。
 
+### iOS UI 翻新（2026-10-28，在工作樹裡、尚未 commit）
+
+- 做了 9 個「快速見效」項目：`Shared/Theme.swift` 設計 token、首頁 large title 與材質模式卡、常用位置空狀態與「…」選單、縮圖牆 Button 化與空狀態、檢視器 44pt 圓鈕與 iPad 右側拍攝資訊欄、海報牆陰影與漸層佔位、集數卡片去副檔名與材質徽章、VLC 控制列（中央播放群、材質面板、自製進度條、滑鼠支援、觸覺）、AVPlayer 續播提示與片名。
+- 完整計畫、備註與下一輪的 B／C 級清單在桌面 `wphoto-ui-shots/UI翻新總結.md`（含截圖）。使用者看過核准後才 commit。
+- 第二輪再做了 VLC 手勢（雙擊兩側 ±10 秒、捏合填滿、下滑關閉；手勢只編譯過、沒在模擬器實際操作）與檢視器的側欄（`HStack`，照片會縮到左邊）、下拉關閉、iOS 18 zoom 轉場。
+
 ### 其他
 
 - Windows 版：發新版 Release（啟動加速、縮圖總覽），並同步 README 截圖。
