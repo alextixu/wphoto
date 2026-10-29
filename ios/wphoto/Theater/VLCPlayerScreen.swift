@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 
 /// VLC 全螢幕播放畫面：點一下顯示／隱藏控制列，播放中 3 秒後自動隱藏
-/// （選單開著或拖曳進度條時不隱藏）。
+/// （選單開著或拖曳進度條時不隱藏）。雙擊兩側 ±10 秒、中央播放／暫停；
+/// 捏合切換填滿／完整；下滑關閉。
 struct VLCPlayerScreen: View {
     let title: String
     let url: URL
@@ -15,6 +16,7 @@ struct VLCPlayerScreen: View {
     @StateObject private var subtitleModel = SubtitleModel()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var controlsVisible = true
     @State private var menuOpen = false
     @State private var isScrubbing = false
@@ -22,7 +24,18 @@ struct VLCPlayerScreen: View {
     @State private var scrubFraction: Double?
     /// 每次操作 +1，重新起算自動隱藏
     @State private var interaction = 0
+    /// 游標停在上下控制列上（Mac、iPad 滑鼠）：不自動隱藏
+    @State private var barHovered = false
+    /// 每次 ±10 秒跳轉 +1，觸發觸覺回饋
+    @State private var jumpCount = 0
     @State private var showResume = false
+    /// 雙擊兩側跳轉的回饋圓；nil = 不顯示
+    @State private var seekFlash: SeekFlash?
+    /// 最近一次捏合的時間：兩指縮放時其中一指的位移也會被下滑手勢收到，放開時用它排除誤判關閉
+    @State private var lastPinch: Date = .distantPast
+
+    /// iPad／Mac 用大一點的按鈕與間距
+    private var regular: Bool { sizeClass == .regular }
 
     private struct AutoHideKey: Equatable {
         var interaction: Int
@@ -30,6 +43,7 @@ struct VLCPlayerScreen: View {
         var playing: Bool
         var menuOpen: Bool
         var scrubbing: Bool
+        var hovered: Bool
     }
 
     var body: some View {
@@ -45,11 +59,25 @@ struct VLCPlayerScreen: View {
             // 主字幕與第二字幕（App 用系統字型畫，中文不會變方格；不攔截點擊）
             SubtitleOverlay(model: subtitleModel, controller: controller, controlsVisible: controlsVisible)
 
-            // 點畫面空白處：顯示／隱藏控制列
-            Color.clear
-                .contentShape(Rectangle())
-                .ignoresSafeArea()
-                .onTapGesture { toggleControls() }
+            // 點畫面空白處：單擊顯示／隱藏控制列，雙擊兩側 ±10 秒、中央播放／暫停，
+            // 捏合切換填滿／完整，下滑關閉。單擊要等雙擊判定失敗（約 0.3 秒）才生效是預期的；
+            // 按鈕、滑鼠移動等其他叫出控制列的路徑不受影響。
+            // 進度條的拖曳掛在 bottomBar 自己身上、層級在這層之上，不會互搶
+            GeometryReader { geo in
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(
+                        SpatialTapGesture(count: 2)
+                            .onEnded { value in handleDoubleTap(at: value.location, width: geo.size.width) }
+                            .exclusively(before: TapGesture().onEnded {
+                                guard !controller.hasError else { return }
+                                toggleControls()
+                            })
+                    )
+                    .simultaneousGesture(pinchGesture)
+                    .simultaneousGesture(swipeDownGesture)
+            }
+            .ignoresSafeArea()
 
             if controller.isOpening && !controller.hasError {
                 ProgressView()
@@ -57,10 +85,32 @@ struct VLCPlayerScreen: View {
                     .tint(.white)
             }
 
+            // 控制列拆成四層各自進出場：漸層淡入、上下列分別從畫面邊緣滑入、中央播放群淡入
             if controlsVisible {
-                controls
+                controlsBackdrop
                     .transition(.opacity)
+                topBar
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                if !controller.isOpening {
+                    centerCluster
+                        .transition(.opacity)
+                }
+                bottomBar
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+
+            // 雙擊跳轉的回饋：三等分的隱形列一直掛著，圓形只在該側那一格進出場，
+            // 縮放動畫才會以圓心為準（整列一起進出場的話會往畫面中央縮）。不攔截點擊
+            HStack(spacing: 0) {
+                seekFlashSlot(.leading)
+                Color.clear
+                seekFlashSlot(.trailing)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
 
             if controller.hasError {
                 errorOverlay
@@ -73,19 +123,37 @@ struct VLCPlayerScreen: View {
                         withAnimation { showResume = false }
                         showControls()
                     }
-                    .padding(.top, 64)
+                    // 控制列顯示時讓開標題列；隱藏後貼近上緣
+                    .padding(.top, controlsVisible ? 72 : 16)
+                    .animation(WPTheme.chrome, value: controlsVisible)
                     Spacer()
                 }
-                .transition(.opacity)
+                .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
             }
 
             keyboardShortcuts
         }
         .statusBarHidden(!controlsVisible)
         .persistentSystemOverlays(controlsVisible ? .automatic : .hidden)
+        // 滑鼠（Mac、iPad 觸控板）：游標一動就叫出控制列；觸控裝置不會觸發
+        .onContinuousHover { phase in
+            if case .active = phase, !controlsVisible { showControls() }
+        }
+        // 觸覺：播放／暫停切換、±10 秒跳轉、開始拖曳進度條（Mac 與沒有觸覺引擎的裝置會自動略過）
+        .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.7), trigger: controller.isPlaying)
+        .sensoryFeedback(.impact(weight: .light), trigger: jumpCount)
+        .sensoryFeedback(.selection, trigger: isScrubbing)
         .task(id: AutoHideKey(interaction: interaction, visible: controlsVisible, playing: controller.isPlaying,
-                              menuOpen: menuOpen, scrubbing: isScrubbing)) {
+                              menuOpen: menuOpen, scrubbing: isScrubbing, hovered: barHovered)) {
             await autoHide()
+        }
+        // 控制列已隱藏時 onHover 不一定會送出「離開」，保險起見一併重設，之後才會再自動隱藏
+        .onChange(of: controlsVisible) { _, visible in
+            if !visible { barHovered = false }
+        }
+        // 任何操作（按鈕、拖曳進度條、鍵盤）都收掉續播提示
+        .onChange(of: interaction) { _, _ in
+            if showResume { withAnimation { showResume = false } }
         }
         .onChange(of: controller.hasEnded) { _, ended in
             if ended {
@@ -125,10 +193,12 @@ struct VLCPlayerScreen: View {
                 reportProgress()
             }
         }
+        // 續播提示：等畫面出現後再從上方彈入，5 秒後自己收掉（有操作時提早收，見 onChange(of: interaction)）
         .task {
             guard resumeMs != nil else { return }
-            showResume = true
-            try? await Task.sleep(for: .seconds(6))
+            try? await Task.sleep(for: .milliseconds(400))
+            withAnimation(.spring(duration: 0.45, bounce: 0.25)) { showResume = true }
+            try? await Task.sleep(for: .seconds(5))
             withAnimation { showResume = false }
         }
         .onDisappear {
@@ -139,6 +209,80 @@ struct VLCPlayerScreen: View {
         }
     }
 
+    // MARK: - 手勢（雙擊、捏合、下滑）
+
+    /// 雙擊：左三分之一後退 10 秒、右三分之一前進 10 秒、中間播放／暫停。
+    /// 中間沒有「側」可以顯示回饋圓，播放／暫停的觸覺由 isPlaying 的變化觸發，不再加一次 jumpCount
+    private func handleDoubleTap(at location: CGPoint, width: CGFloat) {
+        guard !controller.hasError else { return }
+        interaction += 1
+        let side: HorizontalEdge
+        if location.x < width / 3 {
+            side = .leading
+        } else if location.x > width * 2 / 3 {
+            side = .trailing
+        } else {
+            controller.togglePlay()
+            return
+        }
+        let seconds = side == .leading ? -10 : 10
+        controller.jump(seconds: seconds)
+        jumpCount += 1
+        let flash = SeekFlash(side: side, seconds: seconds)
+        withAnimation(.spring(duration: 0.3, bounce: 0.3)) { seekFlash = flash }
+        // 650 毫秒後淡出；期間又雙擊的話 token 已換新，這一次的收掉就作廢
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(650))
+            if seekFlash?.token == flash.token {
+                withAnimation(.easeOut(duration: 0.2)) { seekFlash = nil }
+            }
+        }
+    }
+
+    /// 捏合放大 → 填滿；縮小 → 完整顯示。放開時才判定，門檻 1.2 / 0.8 避免手指稍動就切換
+    private var pinchGesture: some Gesture {
+        MagnifyGesture()
+            // 每 0.1 秒記一次就夠（每一格都寫 @State 會一直重繪整個畫面），
+            // 下滑手勢只看「最近 0.3 秒內有沒有捏合」
+            .onChanged { _ in
+                if Date.now.timeIntervalSince(lastPinch) > 0.1 { lastPinch = .now }
+            }
+            .onEnded { value in
+                lastPinch = .now
+                guard !controller.hasError else { return }
+                if value.magnification > 1.2, !controller.isFill {
+                    controller.setFill(true)
+                    interaction += 1
+                } else if value.magnification < 0.8, controller.isFill {
+                    controller.setFill(false)
+                    interaction += 1
+                }
+            }
+    }
+
+    /// 下滑關閉：放開時往下超過 120pt、而且明顯是垂直（不是斜向滑）才關閉；拖曳中不做視覺回饋
+    private var swipeDownGesture: some Gesture {
+        DragGesture(minimumDistance: 30)
+            .onEnded { value in
+                guard !controller.hasError, !isScrubbing,
+                      Date.now.timeIntervalSince(lastPinch) > 0.3 else { return }
+                let dy = value.translation.height, dx = abs(value.translation.width)
+                if dy > 120, dy > dx * 1.5 { dismiss() }
+            }
+    }
+
+    /// 回饋圓所在的那一格（畫面三分之一寬）：只在該側有跳轉時出現
+    @ViewBuilder
+    private func seekFlashSlot(_ side: HorizontalEdge) -> some View {
+        ZStack {
+            if let flash = seekFlash, flash.side == side {
+                SeekFlashView(flash: flash)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     // MARK: - 鍵盤快捷鍵（Mac、iPad 外接鍵盤）
 
     /// 放在一直存在的隱形按鈕上：控制列自動隱藏後快捷鍵仍然有效
@@ -146,9 +290,9 @@ struct VLCPlayerScreen: View {
         ZStack {
             Button("Play") { controller.togglePlay(); showControls() }
                 .keyboardShortcut(.space, modifiers: [])
-            Button("Back10") { controller.jump(seconds: -10); showControls() }
+            Button("Back10") { controller.jump(seconds: -10); jumpCount += 1; showControls() }
                 .keyboardShortcut(.leftArrow, modifiers: [])
-            Button("Forward10") { controller.jump(seconds: 10); showControls() }
+            Button("Forward10") { controller.jump(seconds: 10); jumpCount += 1; showControls() }
                 .keyboardShortcut(.rightArrow, modifiers: [])
             Button("Close") { dismiss() }
                 .keyboardShortcut(.cancelAction)
@@ -161,36 +305,25 @@ struct VLCPlayerScreen: View {
 
     // MARK: - 控制列
 
-    private var controls: some View {
+    /// 上下兩道漸層：讓白色文字與按鈕在亮的畫面上也看得清楚（不攔截點擊）
+    private var controlsBackdrop: some View {
         VStack(spacing: 0) {
-            topBar
+            LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
+                .frame(height: 140)
             Spacer(minLength: 0)
-            bottomBar
+            LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
+                .frame(height: 200)
         }
-        .background {
-            VStack(spacing: 0) {
-                LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 140)
-                Spacer(minLength: 0)
-                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 200)
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-        }
-        // 控制列本身不掛點擊手勢：按鈕以外的空白處會穿透到下層，由下層的點擊切換顯示／隱藏
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
+
+    // 上下列本身不掛點擊手勢：按鈕以外的空白處會穿透到下層，由下層的點擊切換顯示／隱藏
 
     private var topBar: some View {
         HStack(spacing: 12) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.down")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-            .accessibilityLabel(Text("Close"))
+            // iPhone 是由下往上蓋出來的全螢幕，用 chevron.down；iPad／Mac 用 xmark
+            ChromeButton(systemImage: regular ? "xmark" : "chevron.down", label: "Close") { dismiss() }
 
             Text(title)
                 .font(.subheadline.weight(.semibold))
@@ -201,41 +334,66 @@ struct VLCPlayerScreen: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
+        .onHover { barHovered = $0 }
     }
 
+    /// 畫面正中央的播放群：±10 秒、播放／暫停（開檔中不顯示，避免和轉圈重疊）
+    private var centerCluster: some View {
+        HStack(spacing: regular ? 48 : 36) {
+            circleButton("gobackward.10", label: "Back10",
+                         diameter: regular ? 52 : 44, icon: regular ? 24 : 20) {
+                controller.jump(seconds: -10)
+                jumpCount += 1
+            }
+            circleButton(controller.isPlaying ? "pause.fill" : "play.fill",
+                         label: controller.isPlaying ? "Pause" : "Play",
+                         diameter: regular ? 72 : 60, icon: regular ? 34 : 28) {
+                controller.togglePlay()
+            }
+            circleButton("goforward.10", label: "Forward10",
+                         diameter: regular ? 52 : 44, icon: regular ? 24 : 20) {
+                controller.jump(seconds: 10)
+                jumpCount += 1
+            }
+        }
+    }
+
+    /// 底部霧面面板：時間列（進度條）＋ 選單列；最寬 760pt 置中，iPad 不會整排拉開
     private var bottomBar: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 10) {
-                Text(PlaybackTime.string(ms: shownMs))
-                    .frame(minWidth: 44, alignment: .leading)
-                Slider(value: sliderValue, in: 0...1, onEditingChanged: { editing in
-                    if editing {
-                        isScrubbing = true
-                    } else {
-                        if let fraction = scrubFraction {
-                            controller.seek(toMs: Int(fraction * Double(controller.durationMs)))
-                        }
-                        scrubFraction = nil
-                        isScrubbing = false
+        VStack(spacing: 8) {
+            // 播放中每秒更新 30 次，進度條才會平順；暫停或拖曳時停下來，由狀態變化觸發重繪
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !controller.isPlaying || isScrubbing)) { _ in
+                HStack(spacing: 10) {
+                    Text(PlaybackTime.string(ms: shownMs))
+                        .frame(minWidth: 44, alignment: .leading)
+                    ScrubberBar(fraction: scrubFraction ?? progress,
+                                durationMs: controller.durationMs,
+                                isScrubbing: $isScrubbing,
+                                scrubFraction: $scrubFraction) { fraction in
+                        controller.seek(toMs: Int(fraction * Double(controller.durationMs)))
                         interaction += 1
                     }
-                })
-                .tint(Color.wpAccent)
-                .disabled(controller.durationMs <= 0)
-                Text(controller.durationMs > 0 ? PlaybackTime.string(ms: controller.durationMs) : "--:--")
-                    .frame(minWidth: 44, alignment: .trailing)
+                    .disabled(controller.durationMs <= 0)
+                    .accessibilityElement()
+                    .accessibilityLabel(Text("PlaybackPosition"))
+                    .accessibilityValue(Text(PlaybackTime.string(ms: shownMs) + " / "
+                                             + PlaybackTime.string(ms: controller.durationMs)))
+                    .accessibilityAdjustableAction { direction in
+                        controller.jump(seconds: direction == .increment ? 10 : -10)
+                    }
+                    // 右側顯示剩餘時間（-0:36），比總長更有用
+                    Text(controller.durationMs > 0
+                         ? "-" + PlaybackTime.string(ms: max(0, controller.durationMs - shownMs))
+                         : "--:--")
+                        .frame(minWidth: 52, alignment: .trailing)
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.white)
             }
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.white)
 
             // 寬度以 iPhone SE（375pt）直式放得下為準
             HStack(spacing: 4) {
-                iconButton("gobackward.10", label: "Back10") { controller.jump(seconds: -10) }
-                iconButton(controller.isPlaying ? "pause.fill" : "play.fill",
-                           label: controller.isPlaying ? "Pause" : "Play", size: 26) { controller.togglePlay() }
-                iconButton("goforward.10", label: "Forward10") { controller.jump(seconds: 10) }
-
-                Spacer(minLength: 8)
+                Spacer(minLength: 0)
 
                 PlayerMenuButton(text: rateLabel(controller.rate),
                                  menuTitle: String(localized: "Speed"),
@@ -276,8 +434,16 @@ struct VLCPlayerScreen: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: WPTheme.Radius.hero, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: WPTheme.Radius.hero, style: .continuous)
+            .strokeBorder(Color.wpStroke, lineWidth: 1))
+        .frame(maxWidth: 760)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, regular ? 24 : 12)
+        .padding(.bottom, 12)
+        .onHover { barHovered = $0 }
     }
 
     private func iconButton(_ systemImage: String, label: LocalizedStringKey, size: CGFloat = 20,
@@ -289,9 +455,29 @@ struct VLCPlayerScreen: View {
             Image(systemName: systemImage)
                 .font(.system(size: size, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 40, height: 44)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
+        .hoverEffect(.highlight)
+        .accessibilityLabel(Text(label))
+    }
+
+    /// 中央播放群的材質圓形按鈕
+    private func circleButton(_ systemImage: String, label: LocalizedStringKey, diameter: CGFloat, icon: CGFloat,
+                              action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            interaction += 1
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: icon, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: diameter, height: diameter)
+                .background(.ultraThinMaterial, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
         .accessibilityLabel(Text(label))
     }
 
@@ -307,33 +493,25 @@ struct VLCPlayerScreen: View {
                 .buttonStyle(.borderedProminent)
         }
         .padding(24)
-        .background(Color.wpCard, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .wpCard(radius: WPTheme.Radius.hero, elevated: true)
     }
 
     // MARK: - 進度條
 
-    private var progress: Double {
-        guard controller.durationMs > 0 else { return 0 }
-        return min(1, max(0, Double(controller.currentMs) / Double(controller.durationMs)))
+    /// 進度條用的時間：直接向 libvlc 讀（不經過 @Published，TimelineView 每次更新都拿得到新值）。
+    /// 開檔中 libvlc 還沒跳到續播位置，改用控制器記的 currentMs，提示的位置才不會先顯示 0:00
+    private var liveMs: Int {
+        controller.isOpening ? controller.currentMs : controller.liveTimeMs
     }
 
-    private var sliderValue: Binding<Double> {
-        Binding(
-            get: { scrubFraction ?? progress },
-            set: { newValue in
-                if isScrubbing {
-                    scrubFraction = newValue
-                } else {
-                    // 非拖曳的調整（例如 VoiceOver）直接跳轉
-                    controller.seek(toMs: Int(newValue * Double(controller.durationMs)))
-                }
-            }
-        )
+    private var progress: Double {
+        guard controller.durationMs > 0 else { return 0 }
+        return min(1, max(0, Double(liveMs) / Double(controller.durationMs)))
     }
 
     private var shownMs: Int {
         if let fraction = scrubFraction { return Int(fraction * Double(controller.durationMs)) }
-        return controller.currentMs
+        return liveMs
     }
 
     // MARK: - 選單內容
@@ -474,20 +652,106 @@ struct VLCPlayerScreen: View {
     // MARK: - 自動隱藏
 
     private func toggleControls() {
-        withAnimation(.easeInOut(duration: 0.2)) { controlsVisible.toggle() }
+        withAnimation(WPTheme.chrome) { controlsVisible.toggle() }
         interaction += 1
     }
 
     private func showControls() {
-        withAnimation(.easeInOut(duration: 0.2)) { controlsVisible = true }
+        withAnimation(WPTheme.chrome) { controlsVisible = true }
         interaction += 1
     }
 
     private func autoHide() async {
-        guard controlsVisible, controller.isPlaying, !menuOpen, !isScrubbing else { return }
+        guard controlsVisible, controller.isPlaying, !menuOpen, !isScrubbing, !barHovered else { return }
         try? await Task.sleep(for: .seconds(3))
         guard !Task.isCancelled else { return }
-        withAnimation(.easeInOut(duration: 0.3)) { controlsVisible = false }
+        withAnimation(WPTheme.chrome) { controlsVisible = false }
+    }
+}
+
+/// 雙擊兩側跳轉的回饋狀態。token 每次換新：同側連點時圖示再彈一次，延遲收掉也只認最新那一次
+private struct SeekFlash {
+    let token = UUID()
+    let side: HorizontalEdge
+    let seconds: Int
+}
+
+/// 雙擊跳轉的回饋圓：材質圓形＋ ±10 秒圖示＋秒數，和中央播放群的圓形按鈕同一家族。
+/// 第一次出現靠 scale 轉場彈入；同側連點時靠 symbolEffect 讓圖示再彈一次
+private struct SeekFlashView: View {
+    let flash: SeekFlash
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Image(systemName: flash.side == .leading ? "gobackward.10" : "goforward.10")
+                .font(.system(size: 34, weight: .semibold))
+                .symbolEffect(.bounce, value: flash.token)
+            Text(verbatim: "\(flash.seconds > 0 ? "+" : "")\(flash.seconds)s")
+                .font(.caption.weight(.semibold).monospacedDigit())
+        }
+        .foregroundStyle(.white)
+        .frame(width: 110, height: 110)
+        .background(.ultraThinMaterial, in: Circle())
+        .overlay(Circle().strokeBorder(Color.wpStroke, lineWidth: 1))
+    }
+}
+
+/// 自製進度條：細膠囊 + 圓形拇指；按住拖曳時變粗、拇指放大、上方浮出時間氣泡。
+/// 拖曳中只更新 scrubFraction（畫面跟著動），放開才透過 onCommit 真正跳轉。
+/// 點一下（不拖）也會跳到該位置。無障礙屬性由呼叫端加（需要播放器的時間）。
+private struct ScrubberBar: View {
+    /// 目前顯示的位置（0…1）：拖曳中是拖曳位置，否則是播放進度
+    let fraction: Double
+    let durationMs: Int
+    @Binding var isScrubbing: Bool
+    @Binding var scrubFraction: Double?
+    let onCommit: (Double) -> Void
+
+    var body: some View {
+        GeometryReader { geo in
+            // 寬度還沒量到時避免除以 0
+            let width = max(geo.size.width, 1)
+            let thumb: CGFloat = isScrubbing ? 20 : 14
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.3))
+                Capsule().fill(Color.wpAccent)
+                    .frame(width: width * fraction)
+                Circle().fill(.white)
+                    .frame(width: thumb, height: thumb)
+                    .offset(x: width * fraction - thumb / 2)
+            }
+            .frame(height: isScrubbing ? 8 : 4)
+            // 整個 44pt 高度都能按到，不用準確按在細線上
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isScrubbing = true
+                        scrubFraction = min(1, max(0, value.location.x / width))
+                    }
+                    .onEnded { _ in
+                        if let fraction = scrubFraction { onCommit(fraction) }
+                        scrubFraction = nil
+                        isScrubbing = false
+                    }
+            )
+            .overlay(alignment: .topLeading) {
+                if isScrubbing {
+                    Text(PlaybackTime.string(ms: Int(fraction * Double(durationMs))))
+                        .font(.caption.bold().monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: WPTheme.Radius.badge))
+                        // 氣泡跟著拇指走，但不超出進度條兩端
+                        .offset(x: min(max(width * fraction - 24, 0), width - 48), y: -36)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                }
+            }
+        }
+        .frame(height: 44)
+        .animation(.spring(duration: 0.25, bounce: 0.2), value: isScrubbing)
     }
 }
 
@@ -765,7 +1029,10 @@ struct PlayerMenuButton: UIViewRepresentable {
         let button = MenuTrackingButton(frame: .zero)
         button.showsMenuAsPrimaryAction = true
         button.setTitleColor(.white, for: .normal)
-        button.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+        // 跟著動態字體縮放（等寬數字，速度 1.0x → 1.25x 時寬度不跳）
+        button.titleLabel?.font = UIFontMetrics(forTextStyle: .subheadline)
+            .scaledFont(for: .monospacedDigitSystemFont(ofSize: 15, weight: .semibold))
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
         if let systemImage {
             let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
             let image = UIImage(systemName: systemImage, withConfiguration: config)?
@@ -785,6 +1052,8 @@ struct PlayerMenuButton: UIViewRepresentable {
         coordinator.onSelect = onSelect
         button.onMenuVisibilityChange = onMenuVisibilityChange
         button.accessibilityLabel = menuTitle
+        // VoiceOver 唸「速度，1.0x」而不是只有「速度」
+        button.accessibilityValue = text
         if let text, button.title(for: .normal) != text {
             button.setTitle(text, for: .normal)
         }

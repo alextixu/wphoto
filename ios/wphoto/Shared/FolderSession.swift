@@ -50,7 +50,7 @@ final class FolderSession: ObservableObject {
     /// 最多記住幾個位置
     private static let maxSaved = 30
 
-    private let kind: Kind
+    let kind: Kind
     private var accessing = false
     /// 每次開啟或關閉位置 +1：較早開始、較晚回來的掃描結果直接丟棄
     private var scanGeneration = 0
@@ -91,9 +91,17 @@ final class FolderSession: ObservableObject {
         return items
     }
 
+    /// 開啟的位置本身的名稱：使用者在常用位置改過名字就用改過的（例如「NAS 電影」），
+    /// 否則用資料夾名稱。只查位置本身，子資料夾一律用真正的資料夾名稱
+    private var rootDisplayName: String {
+        guard let root = stack.first else { return "" }
+        let path = root.standardizedFileURL.path
+        return saved.first { $0.path == path }?.name ?? root.lastPathComponent
+    }
+
     /// 目前這一層的名稱
     var folderDisplayName: String {
-        stack.last?.lastPathComponent ?? ""
+        stack.count == 1 ? rootDisplayName : (stack.last?.lastPathComponent ?? "")
     }
 
     /// 是否在點進去的子資料夾裡（可以回上一層）
@@ -101,7 +109,8 @@ final class FolderSession: ObservableObject {
 
     /// 上一層的名稱（返回按鈕用）
     var parentDisplayName: String {
-        stack.count > 1 ? stack[stack.count - 2].lastPathComponent : ""
+        guard stack.count > 1 else { return "" }
+        return stack.count == 2 ? rootDisplayName : stack[stack.count - 2].lastPathComponent
     }
 
     /// 目前這一層在常用位置裡的路徑（看劇進度記下來，首頁「繼續觀看」才開得回同一層）

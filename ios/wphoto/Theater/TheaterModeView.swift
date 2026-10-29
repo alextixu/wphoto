@@ -33,7 +33,8 @@ struct TheaterModeView: View {
 
     var body: some View {
         ZStack {
-            Color.wpBackground.ignoresSafeArea()
+            // 上淺下深的微漸層：材質卡片不會貼在死黑上
+            Rectangle().fill(WPTheme.backdrop).ignoresSafeArea()
             if let name = session.openingName {
                 FolderProgressView(title: String(format: String(localized: "OpeningLocation"), name)) {
                     session.closeFolder()
@@ -43,10 +44,17 @@ struct TheaterModeView: View {
             } else if session.isScanning {
                 FolderProgressView(title: String(localized: "Scanning")) { session.cancelScan() }
             } else if session.files.isEmpty && session.folders.isEmpty {
-                VStack(spacing: 8) {
-                    Text("NoVideos").foregroundStyle(.secondary)
-                    Text("VideoFormatNote").font(.footnote).foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center).padding(.horizontal, 32)
+                // 空資料夾：說明支援的格式，並給「上一層／常用位置／選資料夾」三條路離開
+                ContentUnavailableView {
+                    Label { Text("NoVideos") } icon: { Image(systemName: "film.stack").foregroundStyle(Color.wpAccent) }
+                } description: {
+                    Text("VideoFormatNote")
+                } actions: {
+                    if session.canGoUp { Button("UpOneLevel") { session.goUp() } }
+                    Button("Locations") { session.closeFolder() }
+                    Button("ChooseFolder") { showPicker = true }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
                 }
             } else {
                 ScrollView {
@@ -56,9 +64,21 @@ struct TheaterModeView: View {
                         }
                         LazyVGrid(columns: columns, spacing: isLarge ? 24 : 16) {
                             ForEach(session.files) { file in
-                                EpisodeCard(file: file, refreshToken: refreshToken)
-                                    .onTapGesture { playing = file }
+                                Button { playing = file } label: {
+                                    EpisodeCard(file: file, refreshToken: refreshToken)
+                                }
+                                .buttonStyle(CardPressStyle())
+                                .wpHoverLift()
+                                .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: WPTheme.Radius.card, style: .continuous))
                             }
+                        }
+                        if !session.files.isEmpty {
+                            // 影片數量放在卡片下方，不再佔一條底部工具列
+                            Text(String(format: String(localized: "VideoCount"), session.files.count))
+                                .font(.footnote)
+                                .foregroundStyle(Color.wpSecondaryLabel)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
                         }
                     }
                     .padding(isLarge ? 20 : 12)
@@ -67,7 +87,8 @@ struct TheaterModeView: View {
             }
         }
         .navigationTitle(session.folderURL == nil ? String(localized: "VideoMode") : session.folderDisplayName)
-        .navigationBarTitleDisplayMode(.inline)
+        // 常用位置清單用大標題；開進資料夾後改小標題，把空間留給海報與卡片
+        .navigationBarTitleDisplayMode(session.folderURL == nil ? .large : .inline)
         .modifier(FolderBackButton(session: session))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -77,13 +98,6 @@ struct TheaterModeView: View {
                         Image(systemName: "folder")
                     }
                     .accessibilityLabel(Text("Locations"))
-                }
-            }
-            ToolbarItem(placement: .bottomBar) {
-                if !session.files.isEmpty {
-                    Text(String(format: String(localized: "VideoCount"), session.files.count))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -160,6 +174,16 @@ struct EpisodeCard: View {
         let refreshToken: Int
     }
 
+    private static let shape = RoundedRectangle(cornerRadius: WPTheme.Radius.card, style: .continuous)
+
+    /// 標題不帶副檔名；格式改放到第二行
+    private var displayTitle: String { (file.relativeName as NSString).deletingPathExtension }
+
+    /// 第二行「MP4 · 1:30」：時長還沒讀到（或未下載）就只剩格式
+    private var subtitleLine: String {
+        [file.url.pathExtension.uppercased(), duration].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     var body: some View {
         let watch = progress.entry(for: file.url)
         let resumable = watch?.isResumable == true
@@ -171,10 +195,20 @@ struct EpisodeCard: View {
                         Image(uiImage: image)
                             .resizable()
                             .scaledToFill()
+                            .transition(.opacity)
                     } else {
                         Image(systemName: "film")
                             .font(.title)
                             .foregroundStyle(.secondary)
+                    }
+                }
+                .overlay {
+                    // 底部壓暗：時長徽章與進度條疊在亮畫面上也看得清。
+                    // 另開一層 overlay 而不是跟圖片放同一個 ZStack：scaledToFill 的圖片會比 16:9 框大，
+                    // 同一個 ZStack 會跟著被撐大，漸層就對不準看得到的範圍
+                    if image != nil {
+                        LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
+                            .transition(.opacity)
                     }
                 }
                 .overlay(alignment: .topLeading) {
@@ -183,21 +217,25 @@ struct EpisodeCard: View {
                             .font(.callout.weight(.semibold))
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.white, .green)
-                            .padding(6)
+                            .padding(4)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .padding(8)
                             .accessibilityLabel(Text("Watched"))
                     }
                 }
                 .overlay(alignment: .bottom) {
                     if resumable, let watch {
-                        // 看到一半：底部進度條
+                        // 看到一半：底部進度條（圓角、左右內縮，不貼邊）
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                Rectangle().fill(.black.opacity(0.55))
-                                Rectangle().fill(Color.wpAccent)
+                                Capsule().fill(.white.opacity(0.3))
+                                Capsule().fill(Color.wpAccent)
                                     .frame(width: geo.size.width * watch.fraction)
                             }
                         }
-                        .frame(height: 4)
+                        .frame(height: 3)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
                     }
                 }
                 .overlay(alignment: .topTrailing) {
@@ -206,37 +244,51 @@ struct EpisodeCard: View {
                         Image(systemName: "icloud.and.arrow.down")
                             .font(.caption.weight(.semibold))
                             .padding(5)
-                            .background(.black.opacity(0.6), in: Circle())
-                            .padding(6)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .padding(8)
                             .accessibilityLabel(Text("NotDownloaded"))
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if !duration.isEmpty {
+                        // 有進度條時再往上讓一點，不壓到進度條
                         Text(duration)
-                            .font(.caption2.weight(.semibold))
-                            .monospacedDigit()
-                            .padding(.horizontal, 6).padding(.vertical, 3)
-                            .background(.black.opacity(0.7))
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                            .padding(6)
-                            .padding(.bottom, resumable ? 4 : 0)
+                            .wpBadge()
+                            .padding(8)
+                            .padding(.bottom, resumable ? 10 : 0)
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(Self.shape)
+                .overlay(Self.shape.strokeBorder(Color.wpStroke, lineWidth: 1))
 
-            Text(file.relativeName)
-                .font(.caption)
-                .foregroundStyle(.primary)
+            Text(displayTitle)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.wpLabel)
                 .multilineTextAlignment(.leading)
                 .lineLimit(2, reservesSpace: true)   // 標題區固定兩行高，整排卡片對齊
                 .frame(maxWidth: .infinity, alignment: .leading)
+            Text(subtitleLine)
+                .font(.caption2)
+                .foregroundStyle(Color.wpSecondaryLabel)
+                .lineLimit(1)
         }
         // 點擊範圍 = 整張卡片（被裁掉的畫面不會攔截隔壁卡片的點擊）
         .contentShape(Rectangle())
+        // VoiceOver：整張卡片一個元素，唸集數名＋看到哪裡
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(displayTitle))
+        .accessibilityValue(Text(watchValue(watch)))
+        .animation(WPTheme.imageFade, value: image)
         .task(id: LoadKey(url: file.url, refreshToken: refreshToken)) {
             await load()
         }
+    }
+
+    /// VoiceOver 的值：看完唸「已看」、看到一半唸百分比；沒看過給空字串（不會唸出來）。
+    /// 不用 if／else 切換 modifier：那會換掉 view 身分，縮圖與時長的 @State 會被清掉重讀
+    private func watchValue(_ watch: WatchProgressStore.Entry?) -> String {
+        guard let watch else { return "" }
+        return watch.watched ? String(localized: "Watched") : "\(Int(watch.fraction * 100))%"
     }
 
     private func load() async {

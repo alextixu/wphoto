@@ -26,53 +26,41 @@ struct ModeSelectView: View {
     private static let maxContinue = 5
     private static let maxRecents = 6
 
+    /// 大標題顯示的 App 名稱：跟 Info.plist 的顯示名稱一致，改名時不用再改這裡
+    private static let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "wphoto"
+
     var body: some View {
         let large = sizeClass == .regular
         return NavigationStack {
-            GeometryReader { geo in
-                ScrollView {
-                    VStack(spacing: 28) {
-                        VStack(spacing: 6) {
-                            Text("wphoto")
-                                .font(.system(size: 38, weight: .bold))
-                            Text("ChooseMode")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        HStack(spacing: 16) {
-                            NavigationLink {
-                                PhotoModeView()
-                            } label: {
-                                ModeCard(icon: "photo.on.rectangle.angled", title: "PhotoMode", subtitle: "PhotoModeDesc", large: large)
-                            }
-                            NavigationLink {
-                                TheaterModeView()
-                            } label: {
-                                ModeCard(icon: "film.stack", title: "VideoMode", subtitle: "VideoModeDesc", large: large)
-                            }
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: WPTheme.Spacing.xl) {
+                    modeSection(large: large)
+
+                    // 已經有清單就不必再教怎麼開資料夾：使用者早就會了
+                    if recents.isEmpty && continueWatching.isEmpty {
                         Text("FilesHint")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 12)
-
-                        if !continueWatching.isEmpty {
-                            continueSection
-                        }
-                        if !recents.isEmpty {
-                            recentSection
-                        }
+                            .foregroundStyle(Color.wpSecondaryLabel)
+                            .multilineTextAlignment(.leading)
                     }
-                    .frame(maxWidth: large ? 680 : .infinity)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
-                    // 沒有清單時維持原本的置中版面
-                    .frame(maxWidth: .infinity, minHeight: geo.size.height)
+
+                    if !continueWatching.isEmpty {
+                        continueSection
+                    }
+                    if !recents.isEmpty {
+                        recentSection
+                    }
                 }
+                .frame(maxWidth: large ? 760 : .infinity)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
             }
-            .background(Color.wpBackground.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
+            .wpBackdrop()
+            // 一定用 verbatim：純字串會被當成 LocalizedStringKey 去查表
+            .navigationTitle(Text(verbatim: Self.appName))
+            .navigationBarTitleDisplayMode(.large)
             .navigationDestination(item: $destination) { destination in
                 switch destination {
                 case .photo(let folder):
@@ -84,6 +72,34 @@ struct ModeSelectView: View {
             .onAppear { loadRecents() }
         }
         .tint(.wpAccent)
+    }
+
+    // MARK: - 模式卡片
+
+    private func modeSection(large: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("ChooseMode")
+            HStack(spacing: 16) {
+                NavigationLink {
+                    PhotoModeView()
+                } label: {
+                    ModeCard(icon: "photo.on.rectangle.angled.fill", title: "PhotoMode", subtitle: "PhotoModeDesc", tint: Color.wpPhotoTint, large: large)
+                }
+                .buttonStyle(CardPressStyle())
+                .wpHoverLift()
+                .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: WPTheme.Radius.hero, style: .continuous))
+                NavigationLink {
+                    TheaterModeView()
+                } label: {
+                    ModeCard(icon: "film.stack.fill", title: "VideoMode", subtitle: "VideoModeDesc", tint: Color.wpTheaterTint, large: large)
+                }
+                .buttonStyle(CardPressStyle())
+                .wpHoverLift()
+                .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: WPTheme.Radius.hero, style: .continuous))
+            }
+            // 兩張卡並排，字體放到最大會擠不下：上限停在 accessibility2
+            .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        }
     }
 
     // MARK: - 繼續觀看
@@ -102,7 +118,8 @@ struct ModeSelectView: View {
                 } label: {
                     ContinueRow(entry: entry, locationName: locationName(for: entry))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CardPressStyle(scale: 0.98))
+                .wpHoverHighlight()
                 .contextMenu {
                     Button(role: .destructive) {
                         progress.removeFromContinueWatching(entry.path)
@@ -138,14 +155,17 @@ struct ModeSelectView: View {
                     } label: {
                         RecentRow(kind: recent.kind, folder: recent.folder)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(CardPressStyle(scale: 0.98))
+                    .wpHoverHighlight()
                     if recent.id != recents.last?.id {
-                        Divider().padding(.leading, 52)
+                        // 從文字欄位開始畫：12 邊距 + 36 色塊 + 12 間距
+                        Divider()
+                            .overlay(Color.wpSeparator)
+                            .padding(.leading, 60)
                     }
                 }
             }
-            .background(Color.wpCard)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .wpCard(radius: WPTheme.Radius.card)
         }
     }
 
@@ -159,7 +179,7 @@ struct ModeSelectView: View {
     private func sectionTitle(_ key: LocalizedStringKey) -> some View {
         Text(key)
             .font(.headline)
-            .foregroundStyle(.white)
+            .foregroundStyle(Color.wpLabel)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -172,17 +192,17 @@ private struct ContinueRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "play.circle.fill")
-                .font(.system(size: 30))
+                .font(.title)
                 .foregroundStyle(Color.wpAccent)
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.fileName)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.wpLabel)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(Color(white: 0.6))
+                    .foregroundStyle(Color.wpSecondaryLabel)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 ProgressView(value: entry.fraction)
@@ -190,11 +210,11 @@ private struct ContinueRow: View {
             }
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(Color(white: 0.45))
+                .foregroundStyle(Color.wpTertiaryLabel)
+                .accessibilityHidden(true)
         }
-        .padding(12)
-        .background(Color.wpCard)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(WPTheme.Spacing.m)
+        .wpCard(radius: WPTheme.Radius.card)
         .contentShape(Rectangle())
     }
 
@@ -206,40 +226,52 @@ private struct ContinueRow: View {
     }
 }
 
-/// 「最近位置」的一列：模式圖示、位置名稱、模式與上次開啟時間
+/// 「最近位置」的一列：模式色塊、位置名稱、上一層資料夾與上次開啟時間
 private struct RecentRow: View {
     let kind: FolderSession.Kind
     let folder: FolderSession.SavedFolder
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: kind == .photo ? "photo.on.rectangle.angled" : "film.stack")
-                .font(.title3)
-                .foregroundStyle(Color.wpAccent)
-                .frame(width: 28)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill((kind == .photo ? Color.wpPhotoTint : Color.wpTheaterTint).gradient)
+                .frame(width: 36, height: 36)
+                .overlay {
+                    Image(systemName: kind == .photo ? "photo.on.rectangle.angled" : "film.stack")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
             VStack(alignment: .leading, spacing: 2) {
                 Text(folder.name)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.wpLabel)
                     .lineLimit(1)
+                    .truncationMode(.middle)
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(Color(white: 0.6))
+                    .foregroundStyle(Color.wpSecondaryLabel)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(Color(white: 0.45))
+                .foregroundStyle(Color.wpTertiaryLabel)
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
     }
 
-    /// 「看劇模式 · 3 天前」
+    /// 「上一層資料夾 · 3 天前」：兩個同名的 Documents 靠上一層分辨；
+    /// 位置就在根目錄（沒有上一層）時退回「看劇模式 · 3 天前」
     private var detail: String {
-        let mode = String(localized: kind == .photo ? "PhotoMode" : "VideoMode")
-        return "\(mode) · \(folder.lastOpened.formatted(.relative(presentation: .named)))"
+        let parent = folder.parentName
+        let when = folder.lastOpened.formatted(.relative(presentation: .named))
+        if parent.isEmpty || parent == "/" {
+            let mode = String(localized: kind == .photo ? "PhotoMode" : "VideoMode")
+            return "\(mode) · \(when)"
+        }
+        return "\(parent) · \(when)"
     }
 }
 
@@ -247,26 +279,30 @@ struct ModeCard: View {
     let icon: String
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
+    /// 模式色：照片橘、看劇靛藍，圖示與卡片材質的漸層都用它
+    let tint: Color
     var large = false
+    /// 圖示跟著動態字體縮放（以大標題為基準）；iPad 卡片大，再放大 15%
+    @ScaledMetric(relativeTo: .largeTitle) private var iconSize: CGFloat = 36
 
     var body: some View {
-        VStack(spacing: large ? 16 : 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: large ? 60 : 44, weight: .regular))
-                .foregroundStyle(Color.wpAccent)
+                .font(.system(size: large ? iconSize * 1.15 : iconSize, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(tint)
+            Spacer(minLength: 12)
             Text(title)
-                .font(large ? .title3.weight(.semibold) : .headline)
-                .foregroundStyle(.white)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(Color.wpLabel)
             Text(subtitle)
-                .font(.caption)
-                // 不用 .secondary：放在 NavigationLink 裡會被染成強調色（藍色）
-                .foregroundStyle(Color(white: 0.6))
-                .multilineTextAlignment(.center)
+                .font(.footnote)
+                .foregroundStyle(Color.wpSecondaryLabel)
+                .multilineTextAlignment(.leading)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: large ? 240 : 180)
-        .background(Color.wpCard)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(20)
+        .frame(maxWidth: .infinity, minHeight: large ? 176 : 140, alignment: .leading)
+        .wpCard(radius: WPTheme.Radius.hero, tint: tint, elevated: true)
     }
 }
 

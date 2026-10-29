@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// 常用位置清單：選過的資料夾都記在這裡，點一下就開；向左滑或長按可以重新命名、移除。
+/// 常用位置清單：選過的資料夾都記在這裡，點一下就開；列右側的「…」、向左滑或長按可以重新命名、移除。
+/// 還沒有任何位置時顯示大的空狀態（圖示＋說明＋「選擇資料夾」按鈕），不再是一列藍字加整片黑。
 /// App 啟動時不會自動開啟任何位置，NAS 沒連線也不會卡住。
 struct LocationsView: View {
     @ObservedObject var session: FolderSession
@@ -8,73 +9,125 @@ struct LocationsView: View {
 
     @State private var renaming: FolderSession.SavedFolder?
     @State private var newName = ""
+    /// 每次改名成功 +1，觸發一次成功的觸覺回饋
+    @State private var renameCount = 0
 
     var body: some View {
+        Group {
+            if session.saved.isEmpty {
+                emptyState
+            } else {
+                list
+            }
+        }
+        .wpBackdrop()
+        .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
+               presenting: renaming) { item in
+            TextField("Rename", text: $newName)
+                .submitLabel(.done)
+            Button("OK") {
+                session.renameSaved(item.id, to: newName)
+                renameCount += 1
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        } message: { item in
+            // 顯示完整路徑：同名資料夾（例如多台 NAS 都有「電影」）才分得出是哪一個
+            Text(item.path)
+        }
+        .sensoryFeedback(.success, trigger: renameCount)
+    }
+
+    // MARK: - 空狀態
+
+    /// 還沒有常用位置：畫面中央放大圖示、模式說明與「選擇資料夾」大按鈕
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label {
+                Text(session.kind == .photo ? "PlaceholderPhoto" : "PlaceholderVideo")
+            } icon: {
+                Image(systemName: "folder.badge.plus")
+                    .foregroundStyle(Color.wpAccent)
+            }
+        } description: {
+            Text("FilesHint")
+        } actions: {
+            Button("ChooseFolder", action: onChooseFolder)
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+        }
+    }
+
+    // MARK: - 清單
+
+    private var list: some View {
         List {
             Section {
                 Button(action: onChooseFolder) {
                     Label("ChooseFolder", systemImage: "folder.badge.plus")
                         .foregroundStyle(Color.wpAccent)
                 }
-            } footer: {
-                Text("FilesHint")
+                .listRowBackground(Color.wpCard)
             }
 
             Section("SavedLocations") {
-                if session.saved.isEmpty {
-                    Text("NoSavedLocations")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(session.saved) { item in
+                ForEach(session.saved) { item in
+                    // 開啟與「…」是兩個獨立的按鈕：一定要 .plain / .borderless，
+                    // 否則 List 會把整列的點擊同時轉給所有 Button
+                    HStack(spacing: WPTheme.Spacing.s) {
                         Button { session.openSaved(item) } label: {
                             row(item)
                         }
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) { session.removeSaved(item.id) } label: {
-                                Label("RemoveLocation", systemImage: "trash")
-                            }
-                            Button { startRename(item) } label: {
-                                Label("Rename", systemImage: "pencil")
-                            }
-                            .tint(.orange)
+                        .buttonStyle(.plain)
+                        LocationActionsMenu(onRename: { startRename(item) },
+                                            onRemove: { session.removeSaved(item.id) })
+                    }
+                    .wpHoverHighlight()
+                    .listRowBackground(Color.wpCard)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) { session.removeSaved(item.id) } label: {
+                            Label("RemoveLocation", systemImage: "trash")
                         }
-                        .contextMenu {
-                            Button { startRename(item) } label: {
-                                Label("Rename", systemImage: "pencil")
-                            }
-                            Button(role: .destructive) { session.removeSaved(item.id) } label: {
-                                Label("RemoveLocation", systemImage: "trash")
-                            }
+                        Button { startRename(item) } label: {
+                            Label("Rename", systemImage: "pencil")
+                        }
+                        .tint(.orange)
+                    }
+                    .contextMenu {
+                        Button { startRename(item) } label: {
+                            Label("Rename", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) { session.removeSaved(item.id) } label: {
+                            Label("RemoveLocation", systemImage: "trash")
                         }
                     }
                 }
             }
         }
+        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.wpBackground)
-        .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Rename", text: $newName)
-            Button("OK") {
-                if let item = renaming { session.renameSaved(item.id, to: newName) }
-                renaming = nil
-            }
-            Button("Cancel", role: .cancel) { renaming = nil }
-        }
     }
 
     private func row(_ item: FolderSession.SavedFolder) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "folder.fill")
-                .font(.title3)
-                .foregroundStyle(Color.wpAccent)
+        HStack(spacing: WPTheme.Spacing.m) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.wpAccent.gradient)
+                .frame(width: 36, height: 36)
+                .overlay {
+                    Image(systemName: "folder.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
-                    .foregroundStyle(.primary)
+                    .font(.body)
+                    .foregroundStyle(Color.wpLabel)
                     .lineLimit(1)
+                    .truncationMode(.middle)
                 Text(detail(item))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.wpSecondaryLabel)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -92,6 +145,28 @@ struct LocationsView: View {
     private func startRename(_ item: FolderSession.SavedFolder) {
         newName = item.name
         renaming = item
+    }
+}
+
+/// 位置列右側的「…」選單：重新命名、移除。
+/// 用 Mac 滑鼠或 iPad 游標點它會開選單，而不是把整列當成「開啟」
+private struct LocationActionsMenu: View {
+    let onRename: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        Menu {
+            Button(action: onRename) { Label("Rename", systemImage: "pencil") }
+            Button(role: .destructive, action: onRemove) { Label("RemoveLocation", systemImage: "trash") }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.title3)
+                .foregroundStyle(Color.wpAccent)
+                .frame(width: 44, height: 44)   // 44pt 點擊區
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(Text("Actions"))
     }
 }
 

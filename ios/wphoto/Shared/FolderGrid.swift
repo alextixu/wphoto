@@ -13,7 +13,10 @@ struct FolderGrid: View {
                 Button { onOpen(folder) } label: {
                     FolderTile(name: folder.name, large: large)
                 }
-                .buttonStyle(.plain)
+                // 按下略縮回彈；iPad／Mac 游標時整張卡浮起（反白形狀跟卡片圓角一致）
+                .buttonStyle(CardPressStyle(scale: 0.97))
+                .wpHoverLift()
+                .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: WPTheme.Radius.card, style: .continuous))
             }
         }
     }
@@ -30,18 +33,18 @@ struct FolderTile: View {
                 .foregroundStyle(Color.wpAccent)
             Text(name)
                 .font(large ? .body.weight(.medium) : .subheadline.weight(.medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.wpLabel)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(Color(white: 0.45))
+                .foregroundStyle(Color.wpTertiaryLabel)
+                .accessibilityHidden(true)   // 純裝飾，旁白只念資料夾名稱
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, WPTheme.Spacing.m)
         .frame(maxWidth: .infinity, minHeight: large ? 64 : 56, alignment: .leading)
-        .background(Color.wpCard)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .wpCard(radius: WPTheme.Radius.card)
         .contentShape(Rectangle())
     }
 }
@@ -63,6 +66,7 @@ struct FolderBackButton: ViewModifier {
                                     .fontWeight(.semibold)
                                 Text(session.parentDisplayName)
                                     .lineLimit(1)
+                                    .truncationMode(.middle)   // 長名稱保留頭尾（例如「NAS 電影…2024」）
                                     .frame(maxWidth: 160, alignment: .leading)
                             }
                         }

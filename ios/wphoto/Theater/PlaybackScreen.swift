@@ -14,30 +14,48 @@ struct PlaybackScreen: View {
     @StateObject private var preparer = PlaybackPreparer()
     @Environment(\.dismiss) private var dismiss
 
+    /// 階段代號：只拿來驅動「準備中 → 播放 / 失敗」的淡入淡出。
+    /// Phase 帶 associated value，不便直接當 animation 的 value，用整數代替
+    private var phaseKey: Int {
+        switch preparer.phase {
+        case .checking: 0
+        case .downloading: 1
+        case .ready: 2
+        case .failed: 3
+        }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             switch preparer.phase {
             case .checking:
                 preparing(downloading: false)
+                    .transition(.opacity)
             case .downloading:
                 preparing(downloading: true)
+                    .transition(.opacity)
             case .failed(let message):
                 failure(message)
+                    .transition(.opacity)
             case .ready(let plan):
                 switch plan.engine {
                 case .avPlayer:
                     PlayerScreen(url: plan.videoURL, resumeMs: plan.resumeMs, onProgress: recordProgress,
                                  onFailure: { preparer.fallBackToVLC() })
+                        .transition(.opacity)
                 case .vlc:
                     VLCPlayerScreen(title: file.url.lastPathComponent,
                                     url: plan.videoURL,
                                     subtitles: plan.subtitleURLs,
                                     resumeMs: plan.resumeMs,
                                     onProgress: recordProgress)
+                        .transition(.opacity)
                 }
             }
         }
+        // 階段切換用淡入淡出，不要硬切（AVPlayer → VLC 的備援不換階段，維持直接換，不多閃一次黑畫面）
+        .animation(.easeInOut(duration: 0.25), value: phaseKey)
         .task { await preparer.prepare(file) }
         .onDisappear { preparer.release() }
     }
@@ -57,17 +75,18 @@ struct PlaybackScreen: View {
                 .foregroundStyle(.white)
             Text(file.url.lastPathComponent)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.wpSecondaryLabel)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
             if downloading {
                 Text("DownloadNote")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.wpSecondaryLabel)
                     .multilineTextAlignment(.center)
             }
             Button("Cancel") { dismiss() }
                 .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
                 .tint(.white)
                 .padding(.top, 8)
         }
@@ -84,13 +103,17 @@ struct PlaybackScreen: View {
                 .multilineTextAlignment(.center)
             Text(file.url.lastPathComponent)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.wpSecondaryLabel)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
             Button("Close") { dismiss() }
                 .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
                 .padding(.top, 6)
         }
+        // 失敗訊息裝進浮起的材質卡：跟純黑底分開，一眼看出這是一則要處理的訊息
+        .padding(24)
+        .wpCard(radius: WPTheme.Radius.hero, elevated: true)
         .padding(.horizontal, 40)
     }
 }
