@@ -161,10 +161,8 @@ struct VLCPlayerScreen: View {
                 reportProgress()
             }
         }
-        // 播放中不讓螢幕自動變暗、鎖定（AVPlayer 會自己處理，VLC 不會）；暫停或關閉時還原
-        .onChange(of: controller.isPlaying) { _, playing in
-            UIApplication.shared.isIdleTimerDisabled = playing
-        }
+        // 開檔與播放中不讓螢幕自動關閉（AVPlayer 會自己處理，VLC 不會）；暫停、播完或關閉時還原
+        .keepsScreenAwake(controller.isOpening || controller.isPlaying)
         // 鎖定畫面或切到其他 App：暫停（VLC 沒有子母畫面與鎖定畫面控制）；
         // .inactive（控制中心、來電橫幅）不暫停
         .onChange(of: scenePhase) { _, phase in
@@ -205,7 +203,6 @@ struct VLCPlayerScreen: View {
             reportProgress()
             subtitleModel.stop()
             controller.teardown()
-            UIApplication.shared.isIdleTimerDisabled = false
         }
     }
 

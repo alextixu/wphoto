@@ -25,6 +25,14 @@ struct PlaybackScreen: View {
         }
     }
 
+    /// 檢查檔案與下載階段：NAS 上的大檔可能要等很久，途中螢幕關掉、App 被暫停，下載就斷了
+    private var isPreparing: Bool {
+        switch preparer.phase {
+        case .checking, .downloading: true
+        case .ready, .failed: false
+        }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -57,6 +65,7 @@ struct PlaybackScreen: View {
         // 階段切換用淡入淡出，不要硬切（AVPlayer → VLC 的備援不換階段，維持直接換，不多閃一次黑畫面）
         .animation(.easeInOut(duration: 0.25), value: phaseKey)
         .task { await preparer.prepare(file) }
+        .keepsScreenAwake(isPreparing)
         .onDisappear { preparer.release() }
     }
 
