@@ -35,7 +35,7 @@ struct PhotoModeView: View {
 
     var body: some View {
         ZStack {
-            Rectangle().fill(WPTheme.backdrop).ignoresSafeArea()
+            CinemaBackdrop(glow: false)
             if let name = session.openingName {
                 FolderProgressView(title: String(format: String(localized: "OpeningLocation"), name)) {
                     session.closeFolder()
@@ -47,11 +47,11 @@ struct PhotoModeView: View {
             } else if visibleFiles.isEmpty && session.folders.isEmpty {
                 // 空資料夾不只說「沒有照片」，順便給出路：上一層／回位置清單／另選資料夾
                 ContentUnavailableView {
-                    Label { Text("NoPhotos") } icon: { Image(systemName: "photo.on.rectangle").foregroundStyle(Color.wpAccent) }
+                    Label { Text("NoPhotos") } icon: { Image(systemName: "photo.on.rectangle").foregroundStyle(Color.wpSecondaryLabel) }
                 } actions: {
                     if session.canGoUp { Button("UpOneLevel") { session.goUp() } }
                     Button("Locations") { session.closeFolder() }
-                    Button("ChooseFolder") { showPicker = true }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+                    Button("ChooseFolder") { showPicker = true }.wpPrimaryButton()
                 }
             } else {
                 ScrollView {
@@ -94,7 +94,7 @@ struct PhotoModeView: View {
                         Label(typeFilter ?? String(localized: "AllTypes"),
                               systemImage: typeFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                             .labelStyle(.titleAndIcon)
-                            .foregroundStyle(Color.wpAccent)
+                            .foregroundStyle(Color.wpLabel)
                     }
                 }
                 // 開著資料夾時：回到常用位置清單（可改開別的位置）

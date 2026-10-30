@@ -21,7 +21,7 @@ struct PosterGrid: View {
                 }
                 .buttonStyle(CardPressStyle())
                 .wpHoverLift()
-                .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: WPTheme.Radius.card, style: .continuous))
+                .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: WPTheme.Radius.poster, style: .continuous))
             }
         }
     }
@@ -37,7 +37,7 @@ struct PosterTile: View {
 
     /// 「片名 (年份)」：片名後接四位數年份（19xx／20xx）括號收尾
     private static let yearPattern = try? NSRegularExpression(pattern: "^(.*?)\\s*\\(((?:19|20)\\d{2})\\)\\s*$")
-    private static let shape = RoundedRectangle(cornerRadius: WPTheme.Radius.card, style: .continuous)
+    private static let shape = RoundedRectangle(cornerRadius: WPTheme.Radius.poster, style: .continuous)
 
     var body: some View {
         let parts = titleParts
@@ -79,23 +79,15 @@ struct PosterTile: View {
         }
     }
 
-    /// 沒封面的佔位：用資料夾名決定色相的漸層＋首字母，同一部片每次開啟都同一個顏色。
-    /// 用 djb2 而不是 hashValue：Swift 的 hashValue 每次啟動都換種子，顏色會跳
+    /// 沒封面的佔位：深色片框＋襯線字首字，像片盒側標。
+    /// 不用彩色：沒封面的片一多，整面牆就花了，也會搶走真正海報的目光
     private var placeholder: some View {
-        let h = folder.name.unicodeScalars.reduce(5381) { ($0 &<< 5) &+ $0 &+ Int($1.value) }
-        let hue = Double(h.magnitude % 360) / 360
-        return ZStack {
-            LinearGradient(colors: [Color(hue: hue, saturation: 0.45, brightness: 0.55),
-                                    Color(hue: hue, saturation: 0.5, brightness: 0.25)],
+        ZStack {
+            LinearGradient(colors: [Color.wpSurfaceElevated, Color.wpCard],
                            startPoint: .top, endPoint: .bottom)
-            VStack(spacing: 6) {
-                Text(String(folder.name.prefix(1)).uppercased())
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
-                Image(systemName: "film.stack")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.6))
-            }
+            Text(String(folder.name.prefix(1)).uppercased())
+                .font(.system(size: 44, weight: .regular, design: .serif))
+                .foregroundStyle(Color.wpSecondaryLabel)
         }
     }
 

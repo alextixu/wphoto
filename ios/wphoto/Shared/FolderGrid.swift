@@ -30,7 +30,7 @@ struct FolderTile: View {
         HStack(spacing: 10) {
             Image(systemName: "folder.fill")
                 .font(large ? .title2 : .title3)
-                .foregroundStyle(Color.wpAccent)
+                .foregroundStyle(Color.wpSecondaryLabel)
             Text(name)
                 .font(large ? .body.weight(.medium) : .subheadline.weight(.medium))
                 .foregroundStyle(Color.wpLabel)

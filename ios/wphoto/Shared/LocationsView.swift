@@ -20,7 +20,7 @@ struct LocationsView: View {
                 list
             }
         }
-        .wpBackdrop()
+        .wpBackdrop(glow: session.kind == .video)
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
                presenting: renaming) { item in
             TextField("Rename", text: $newName)
@@ -47,14 +47,13 @@ struct LocationsView: View {
                 Text(session.kind == .photo ? "PlaceholderPhoto" : "PlaceholderVideo")
             } icon: {
                 Image(systemName: "folder.badge.plus")
-                    .foregroundStyle(Color.wpAccent)
+                    .foregroundStyle(Color.wpSecondaryLabel)
             }
         } description: {
             Text("FilesHint")
         } actions: {
             Button("ChooseFolder", action: onChooseFolder)
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
+                .wpPrimaryButton()
                 .controlSize(.large)
         }
     }
@@ -66,12 +65,12 @@ struct LocationsView: View {
             Section {
                 Button(action: onChooseFolder) {
                     Label("ChooseFolder", systemImage: "folder.badge.plus")
-                        .foregroundStyle(Color.wpAccent)
+                        .foregroundStyle(Color.wpLabel)
                 }
                 .listRowBackground(Color.wpCard)
             }
 
-            Section("SavedLocations") {
+            Section {
                 ForEach(session.saved) { item in
                     // 開啟與「…」是兩個獨立的按鈕：一定要 .plain / .borderless，
                     // 否則 List 會把整列的點擊同時轉給所有 Button
@@ -92,7 +91,7 @@ struct LocationsView: View {
                         Button { startRename(item) } label: {
                             Label("Rename", systemImage: "pencil")
                         }
-                        .tint(.orange)
+                        .tint(Color.wpMuted)
                     }
                     .contextMenu {
                         Button { startRename(item) } label: {
@@ -103,6 +102,8 @@ struct LocationsView: View {
                         }
                     }
                 }
+            } header: {
+                Text("SavedLocations").wpSectionTitle()
             }
         }
         .listStyle(.insetGrouped)
@@ -111,14 +112,7 @@ struct LocationsView: View {
 
     private func row(_ item: FolderSession.SavedFolder) -> some View {
         HStack(spacing: WPTheme.Spacing.m) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.wpAccent.gradient)
-                .frame(width: 36, height: 36)
-                .overlay {
-                    Image(systemName: "folder.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
+            IconTile(systemName: "folder.fill")
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
                     .font(.body)
@@ -161,7 +155,7 @@ private struct LocationActionsMenu: View {
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.title3)
-                .foregroundStyle(Color.wpAccent)
+                .foregroundStyle(Color.wpSecondaryLabel)
                 .frame(width: 44, height: 44)   // 44pt 點擊區
                 .contentShape(Rectangle())
         }

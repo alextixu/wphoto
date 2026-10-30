@@ -94,9 +94,7 @@ struct PlaybackScreen: View {
                     .multilineTextAlignment(.center)
             }
             Button("Cancel") { dismiss() }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .tint(.white)
+                .wpSecondaryButton()
                 .padding(.top, 8)
         }
         .padding(.horizontal, 40)
@@ -106,7 +104,7 @@ struct PlaybackScreen: View {
         VStack(spacing: 14) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 40))
-                .foregroundStyle(.yellow)
+                .foregroundStyle(Color.wpAccent)
             Text(message)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
@@ -116,8 +114,7 @@ struct PlaybackScreen: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
             Button("Close") { dismiss() }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
+                .wpPrimaryButton()
                 .padding(.top, 6)
         }
         // 失敗訊息裝進浮起的材質卡：跟純黑底分開，一眼看出這是一則要處理的訊息

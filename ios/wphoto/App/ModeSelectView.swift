@@ -71,7 +71,8 @@ struct ModeSelectView: View {
             }
             .onAppear { loadRecents() }
         }
-        .tint(.wpAccent)
+        // 導覽列、選單用象牙白：紅字在深色底上對比不足，紅色只留給播放與主要按鈕
+        .tint(.wpLabel)
     }
 
     // MARK: - 模式卡片
@@ -83,7 +84,7 @@ struct ModeSelectView: View {
                 NavigationLink {
                     PhotoModeView()
                 } label: {
-                    ModeCard(icon: "photo.on.rectangle.angled.fill", title: "PhotoMode", subtitle: "PhotoModeDesc", tint: Color.wpPhotoTint, large: large)
+                    ModeCard(icon: "photo.on.rectangle.angled.fill", title: "PhotoMode", subtitle: "PhotoModeDesc", large: large)
                 }
                 .buttonStyle(CardPressStyle())
                 .wpHoverLift()
@@ -91,7 +92,7 @@ struct ModeSelectView: View {
                 NavigationLink {
                     TheaterModeView()
                 } label: {
-                    ModeCard(icon: "film.stack.fill", title: "VideoMode", subtitle: "VideoModeDesc", tint: Color.wpTheaterTint, large: large)
+                    ModeCard(icon: "film.stack.fill", title: "VideoMode", subtitle: "VideoModeDesc", velvet: true, large: large)
                 }
                 .buttonStyle(CardPressStyle())
                 .wpHoverLift()
@@ -178,8 +179,7 @@ struct ModeSelectView: View {
 
     private func sectionTitle(_ key: LocalizedStringKey) -> some View {
         Text(key)
-            .font(.headline)
-            .foregroundStyle(Color.wpLabel)
+            .wpSectionTitle()
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -226,21 +226,14 @@ private struct ContinueRow: View {
     }
 }
 
-/// 「最近位置」的一列：模式色塊、位置名稱、上一層資料夾與上次開啟時間
+/// 「最近位置」的一列：模式圖示、位置名稱、上一層資料夾與上次開啟時間
 private struct RecentRow: View {
     let kind: FolderSession.Kind
     let folder: FolderSession.SavedFolder
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill((kind == .photo ? Color.wpPhotoTint : Color.wpTheaterTint).gradient)
-                .frame(width: 36, height: 36)
-                .overlay {
-                    Image(systemName: kind == .photo ? "photo.on.rectangle.angled" : "film.stack")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
+            IconTile(systemName: kind == .photo ? "photo.on.rectangle.angled" : "film.stack")
             VStack(alignment: .leading, spacing: 2) {
                 Text(folder.name)
                     .foregroundStyle(Color.wpLabel)
@@ -279,36 +272,36 @@ struct ModeCard: View {
     let icon: String
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
-    /// 模式色：照片橘、看劇靛藍，圖示與卡片材質的漸層都用它
-    let tint: Color
+    /// 看劇卡用深紅絨布底，是首頁最重的一塊；照片卡維持深色，兩張才有主次
+    var velvet = false
     var large = false
     /// 圖示跟著動態字體縮放（以大標題為基準）；iPad 卡片大，再放大 15%
     @ScaledMetric(relativeTo: .largeTitle) private var iconSize: CGFloat = 36
 
+    @ViewBuilder
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let content = VStack(alignment: .leading, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: large ? iconSize * 1.15 : iconSize, weight: .medium))
+                .font(.system(size: large ? iconSize * 1.15 : iconSize, weight: .regular))
                 .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(tint)
+                .foregroundStyle(Color.wpLabel)
             Spacer(minLength: 12)
             Text(title)
-                .font(.title3.weight(.bold))
+                .font(.title3.weight(.semibold))
+                .fontDesign(.serif)
                 .foregroundStyle(Color.wpLabel)
             Text(subtitle)
                 .font(.footnote)
-                .foregroundStyle(Color.wpSecondaryLabel)
+                // 灰字壓在深紅上對比不足，改用半透明象牙白
+                .foregroundStyle(velvet ? Color.wpLabel.opacity(0.75) : Color.wpSecondaryLabel)
                 .multilineTextAlignment(.leading)
         }
         .padding(20)
         .frame(maxWidth: .infinity, minHeight: large ? 176 : 140, alignment: .leading)
-        .wpCard(radius: WPTheme.Radius.hero, tint: tint, elevated: true)
+        if velvet {
+            content.wpCard(radius: WPTheme.Radius.hero, fill: WPTheme.velvet, elevated: true)
+        } else {
+            content.wpCard(radius: WPTheme.Radius.hero, elevated: true)
+        }
     }
-}
-
-extension Color {
-    /// 與 Windows 版相同的純黑底配色
-    static let wpBackground = Color(red: 10 / 255, green: 10 / 255, blue: 10 / 255)
-    static let wpCard = Color(red: 28 / 255, green: 28 / 255, blue: 30 / 255)
-    static let wpAccent = Color(red: 10 / 255, green: 132 / 255, blue: 255 / 255)
 }

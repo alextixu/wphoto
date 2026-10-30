@@ -1,36 +1,57 @@
 import SwiftUI
 
 // 設計 token：顏色、圓角、間距、動畫與共用的外觀 modifier，照片／看劇兩個模式共用。
-// 基底三色 wpBackground / wpCard / wpAccent 留在 App/ModeSelectView.swift（同一個 module，
-// 這裡直接引用），此檔只宣告「新的」token，避免重複定義。
+//
+// 配色概念是「熄燈後的放映廳」：畫面裡唯一的彩色是座椅與布幕的絨布紅，其餘都是暖黑與象牙白，
+// 讓海報、照片本身成為最亮的東西。紅色對深色底的對比只有 3.3:1，夠當圖示與填色、不夠當小字，
+// 所以文字一律用象牙白系列；紅色只留給「播放、進度、主要動作」，用得少才顯得貴。
 
 // MARK: - 顏色
 
+private extension Color {
+    init(hex: UInt32) {
+        self.init(red: Double((hex >> 16) & 0xFF) / 255,
+                  green: Double((hex >> 8) & 0xFF) / 255,
+                  blue: Double(hex & 0xFF) / 255)
+    }
+}
+
 extension Color {
-    /// 比 wpCard 再亮一階的表面（surface2）：疊在卡片上的控制項、彈出層
-    static let wpSurfaceElevated = Color(red: 44 / 255, green: 44 / 255, blue: 46 / 255)
-    /// 列與列之間的分隔線：黑底上用半透明白，深淺卡片都看得到
-    static let wpSeparator = Color.white.opacity(0.08)
-    /// 卡片邊框：比分隔線略明顯一點，讓材質卡片在純黑底上有邊界
-    static let wpStroke = Color.white.opacity(0.10)
-    /// 照片模式的主題色 #FF9F0A（系統橘）
-    static let wpPhotoTint = Color(red: 255 / 255, green: 159 / 255, blue: 10 / 255)
-    /// 看劇模式的主題色 #5E5CE6（系統靛藍）
-    static let wpTheaterTint = Color(red: 94 / 255, green: 92 / 255, blue: 230 / 255)
+    /// 全頁底色：帶一點暖意的黑，不用死黑
+    static let wpBackground = Color(hex: 0x0E0B0A)
+    /// 卡片表面
+    static let wpCard = Color(hex: 0x1C1716)
+    /// 比 wpCard 再亮一階的表面（surface2）：疊在卡片上的控制項、圖示底塊
+    static let wpSurfaceElevated = Color(hex: 0x2A2322)
+    /// 絨布紅：全 App 唯一的彩色，白字壓在上面的對比是 5.3:1
+    static let wpAccent = Color(hex: 0xC8313A)
+    /// 深絨布紅：大面積用（首頁看劇卡），比 wpAccent 暗才不會刺眼
+    static let wpVelvet = Color(hex: 0x5C121C)
+    static let wpVelvetDeep = Color(hex: 0x2E0A10)
+    /// 次要動作的底色（清單滑動的重新命名）：白字對比夠、又不搶紅色的焦點
+    static let wpMuted = Color(hex: 0x5A504A)
     /// 文字三階層：App 固定深色外觀，不用 .secondary（放在 NavigationLink 裡會被染成強調色）
-    static let wpLabel = Color.white
-    static let wpSecondaryLabel = Color(white: 0.6)
-    static let wpTertiaryLabel = Color(white: 0.45)
+    static let wpLabel = Color(hex: 0xF2ECE4)
+    static let wpSecondaryLabel = Color(hex: 0xA89F97)
+    static let wpTertiaryLabel = Color(hex: 0x8A8079)
+    /// 列與列之間的分隔線
+    static let wpSeparator = Color.wpLabel.opacity(0.08)
+    /// 卡片邊框：比分隔線略明顯一點，讓霧面卡片在暗底上有邊界
+    static let wpStroke = Color.wpLabel.opacity(0.10)
 }
 
 // MARK: - 尺寸與動畫
 
 enum WPTheme {
-    /// 圓角：徽章 < 卡片 < 首頁大卡
+    /// 圓角偏小：大圓角顯得活潑，端莊的畫面要收斂
     enum Radius {
-        static let badge: CGFloat = 6
-        static let card: CGFloat = 12
-        static let hero: CGFloat = 20
+        static let badge: CGFloat = 4
+        /// 海報、影片畫面：像真的片框，幾乎是直角
+        static let poster: CGFloat = 4
+        /// 按鈕、圖示底塊
+        static let control: CGFloat = 8
+        static let card: CGFloat = 10
+        static let hero: CGFloat = 14
     }
 
     /// 間距階梯（4 的倍數）
@@ -42,9 +63,15 @@ enum WPTheme {
         static let xl: CGFloat = 24
     }
 
-    /// 全頁背景：上淺下深的微漸層，讓材質卡片不會貼在死黑上
+    /// 全頁背景：上淺下深的微漸層，讓卡片不會貼在死黑上
     static let backdrop = LinearGradient(
-        colors: [Color(white: 0.10), Color(white: 0.02)],
+        colors: [Color(hex: 0x171211), Color(hex: 0x0A0807)],
+        startPoint: .top, endPoint: .bottom
+    )
+
+    /// 深紅絨布的表面（首頁看劇卡）
+    static let velvet = LinearGradient(
+        colors: [Color.wpVelvet, Color.wpVelvetDeep],
         startPoint: .top, endPoint: .bottom
     )
 
@@ -72,47 +99,55 @@ struct CardPressStyle: ButtonStyle {
 
 // MARK: - 卡片表面
 
-/// 卡片的材質表面：iOS 26 用系統 Liquid Glass，更早的系統用材質 + 漸層 + 邊框 + 陰影模擬。
-/// CI 是 Xcode 16.4（Swift 6.1），glassEffect 只在 Xcode 26+ 的 SDK 才有，
-/// 所以用 `#if compiler(>=6.2)` 讓那段只在新 Xcode 編譯；執行期再用 #available 分流。
-struct CardSurface: ViewModifier {
+/// 卡片的霧面表面：實色底 + 細邊框 + 陰影。
+/// 不用材質或 Liquid Glass：玻璃會反映背後的內容、邊緣帶高光，放映廳要的是絨布般吸光的質感
+struct CardSurface<Fill: ShapeStyle>: ViewModifier {
     var radius: CGFloat
-    var tint: Color?
+    var fill: Fill
     var elevated: Bool
 
-    @ViewBuilder
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        #if compiler(>=6.2)
-        if #available(iOS 26, *) {
-            content.glassEffect(tint.map { Glass.regular.tint($0.opacity(0.35)) } ?? .regular, in: shape)
-        } else {
-            classic(content, shape)
-        }
-        #else
-        classic(content, shape)
-        #endif
-    }
-
-    /// iOS 17–18 的外觀：regularMaterial 底 + 主題色斜向漸層 + 細邊框 + 陰影
-    private func classic(_ content: Content, _ shape: RoundedRectangle) -> some View {
         content
-            .background {
-                ZStack {
-                    shape.fill(.regularMaterial)
-                    if let tint {
-                        shape.fill(LinearGradient(
-                            colors: [tint.opacity(0.35), tint.opacity(0.06)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ))
-                    }
-                }
-            }
+            .background(fill, in: shape)
             .overlay(shape.strokeBorder(Color.wpStroke, lineWidth: 1))
             .clipShape(shape)
-            .shadow(color: .black.opacity(elevated ? 0.45 : 0.35),
+            .shadow(color: .black.opacity(elevated ? 0.5 : 0.35),
                     radius: elevated ? 16 : 8,
                     y: elevated ? 8 : 4)
+    }
+}
+
+/// 全頁背景。glow：畫面上方一抹很淡的紅光，像布幕映出來的；照片模式不開，避免影響看照片的色偏判斷
+struct CinemaBackdrop: View {
+    var glow = true
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(WPTheme.backdrop)
+            if glow {
+                RadialGradient(colors: [Color.wpVelvet.opacity(0.32), .clear],
+                               center: .top, startRadius: 0, endRadius: 560)
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
+/// 清單列左側的圖示底塊：不分模式都是同一個安靜的深色塊，不靠顏色區分，靠圖形
+struct IconTile: View {
+    let systemName: String
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: WPTheme.Radius.control, style: .continuous)
+            .fill(Color.wpSurfaceElevated)
+            .frame(width: 36, height: 36)
+            .overlay {
+                Image(systemName: systemName)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.wpLabel)
+            }
+            .accessibilityHidden(true)
     }
 }
 
@@ -120,8 +155,35 @@ struct CardSurface: ViewModifier {
 
 extension View {
     /// 套上卡片表面（見 CardSurface）
-    func wpCard(radius: CGFloat = WPTheme.Radius.card, tint: Color? = nil, elevated: Bool = false) -> some View {
-        modifier(CardSurface(radius: radius, tint: tint, elevated: elevated))
+    func wpCard(radius: CGFloat = WPTheme.Radius.card, elevated: Bool = false) -> some View {
+        modifier(CardSurface(radius: radius, fill: Color.wpCard, elevated: elevated))
+    }
+
+    /// 同上，但底色自訂（漸層也可以）
+    func wpCard(radius: CGFloat = WPTheme.Radius.card, fill: some ShapeStyle, elevated: Bool = false) -> some View {
+        modifier(CardSurface(radius: radius, fill: fill, elevated: elevated))
+    }
+
+    /// 分區標題：小字、寬字距，像片尾字幕，比粗體大字沉穩
+    func wpSectionTitle() -> some View {
+        font(.footnote.weight(.semibold))
+            .tracking(2)
+            .textCase(.uppercase)
+            .foregroundStyle(Color.wpSecondaryLabel)
+    }
+
+    /// 主要動作按鈕：全 App 唯一的紅色按鈕
+    func wpPrimaryButton() -> some View {
+        buttonStyle(.borderedProminent)
+            .buttonBorderShape(.roundedRectangle(radius: WPTheme.Radius.control))
+            .tint(Color.wpAccent)
+    }
+
+    /// 次要按鈕：壓在深色底上的象牙白
+    func wpSecondaryButton() -> some View {
+        buttonStyle(.bordered)
+            .buttonBorderShape(.roundedRectangle(radius: WPTheme.Radius.control))
+            .tint(Color.wpLabel)
     }
 
     /// iPad 游標：卡片浮起
@@ -134,16 +196,12 @@ extension View {
         hoverEffect(.highlight)
     }
 
-    /// 全頁背景漸層（延伸到安全區外）
-    func wpBackdrop() -> some View {
-        background {
-            Rectangle()
-                .fill(WPTheme.backdrop)
-                .ignoresSafeArea()
-        }
+    /// 全頁背景（延伸到安全區外）
+    func wpBackdrop(glow: Bool = true) -> some View {
+        background { CinemaBackdrop(glow: glow) }
     }
 
-    /// 縮圖角落的小徽章（時長、張數…）：等寬數字、膠囊材質底。
+    /// 縮圖角落的小徽章（時長、張數…）：等寬數字、材質底。
     /// 固定深色外觀，疊在亮色照片上材質也不會變白
     func wpBadge() -> some View {
         font(.caption2.weight(.semibold))
@@ -151,7 +209,7 @@ extension View {
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: WPTheme.Radius.badge, style: .continuous))
             .environment(\.colorScheme, .dark)
     }
 }

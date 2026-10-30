@@ -482,12 +482,12 @@ struct VLCPlayerScreen: View {
         VStack(spacing: 14) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 40))
-                .foregroundStyle(.yellow)
+                .foregroundStyle(Color.wpAccent)
             Text("CantPlayVideo")
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
             Button("Close") { dismiss() }
-                .buttonStyle(.borderedProminent)
+                .wpPrimaryButton()
         }
         .padding(24)
         .wpCard(radius: WPTheme.Radius.hero, elevated: true)
@@ -709,15 +709,18 @@ private struct ScrubberBar: View {
             // 寬度還沒量到時避免除以 0
             let width = max(geo.size.width, 1)
             let thumb: CGFloat = isScrubbing ? 20 : 14
+            let track: CGFloat = isScrubbing ? 8 : 4
+            // 軌道高度要寫在軌道自己身上：寫在 ZStack 外面的話，ZStack 會把最大的子項（圓點）的高度
+            // 再分給其他彈性子項，細線就被撐成跟圓點一樣粗
             ZStack(alignment: .leading) {
                 Capsule().fill(.white.opacity(0.3))
+                    .frame(height: track)
                 Capsule().fill(Color.wpAccent)
-                    .frame(width: width * fraction)
+                    .frame(width: width * fraction, height: track)
                 Circle().fill(.white)
                     .frame(width: thumb, height: thumb)
                     .offset(x: width * fraction - thumb / 2)
             }
-            .frame(height: isScrubbing ? 8 : 4)
             // 整個 44pt 高度都能按到，不用準確按在細線上
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
@@ -786,7 +789,7 @@ struct SubtitleOverlay: View {
             // 上方：第二字幕（位置選「上方」時）
             VStack(spacing: 0) {
                 if secondOnTop && !second.isEmpty {
-                    subtitleText(second, rect: rect)
+                    subtitleText(second, video: rect.size, screenWidth: geo.size.width)
                 }
                 Spacer(minLength: 0)
             }
@@ -798,15 +801,15 @@ struct SubtitleOverlay: View {
                 Spacer(minLength: 0)
                 if busy { statusBadge }
                 if !secondOnTop && !second.isEmpty {
-                    subtitleText(second, rect: rect)
+                    subtitleText(second, video: rect.size, screenWidth: geo.size.width)
                 }
                 if !main.isEmpty {
-                    subtitleText(main, rect: rect)
+                    subtitleText(main, video: rect.size, screenWidth: geo.size.width)
                 }
             }
             .padding(.bottom, max(geo.size.height - rect.maxY + rect.height * 0.05, controlsVisible ? 130 : 16))
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Self.sidePadding)
         .frame(width: geo.size.width, height: geo.size.height)
     }
 
@@ -824,18 +827,37 @@ struct SubtitleOverlay: View {
         .background(.black.opacity(0.6), in: Capsule())
     }
 
-    private func subtitleText(_ text: String, rect: CGRect) -> some View {
-        Text(text)
-            // 影片高度的 6.5%：iPhone 橫向約 26pt，13 吋 iPad 約 50pt
-            .font(.system(size: max(18, min(56, rect.height * 0.065)), weight: .semibold))
+    /// 字幕左右留白：字級上限要扣掉這段
+    private static let sidePadding: CGFloat = 24
+
+    /// 字幕字級（pt）。規則參考串流平台，重點是「跟著畫面等比例、沒有固定上限」：
+    /// - YouTube 預設字幕實測是播放器高度的 4.44%（360p 到 4K 都一樣）；Netflix 規範沒有百分比，只要求
+    ///   「相對影片解析度，且一行放得下 16 個中文字（英文 42 字）」
+    /// - 這裡用高度的 6.5%：YouTube 字幕有黑底，這裡是描邊字，要大一點才清楚；此時英文 42 字也放得下
+    /// - 同時看寬度：2.39:1 的電影畫面比較矮，只看高度字會比 16:9 的片小，換片時字忽大忽小
+    /// - 直式影片很高但很窄，所以上限是「一行放得下 16 字」，不是固定點數：
+    ///   固定點數在大視窗、4K 外接螢幕會把字壓小
+    /// - 下限 20pt：手機直向看橫式影片時，影片只有一小條，比例算出來太小
+    static func subtitleFontSize(video: CGSize, screenWidth: CGFloat) -> CGFloat {
+        let proportional = max(video.height * 0.065, video.width * 0.0366)
+        let fitsSixteen = (screenWidth - sidePadding * 2) / 16
+        return max(20, min(proportional, fitsSixteen))
+    }
+
+    private func subtitleText(_ text: String, video: CGSize, screenWidth: CGFloat) -> some View {
+        let size = Self.subtitleFontSize(video: video, screenWidth: screenWidth)
+        // 描邊跟字一起放大：固定 1pt 在大字上會細到看不見
+        let edge = max(1, size * 0.02)
+        return Text(text)
+            .font(.system(size: size, weight: .semibold))
             .foregroundStyle(.white)
             .multilineTextAlignment(.center)
             // 四個方向的黑色描邊加一點陰影，亮的畫面上也看得清楚
-            .shadow(color: .black, radius: 0, x: 1, y: 1)
-            .shadow(color: .black, radius: 0, x: -1, y: -1)
-            .shadow(color: .black, radius: 0, x: 1, y: -1)
-            .shadow(color: .black, radius: 0, x: -1, y: 1)
-            .shadow(color: .black.opacity(0.7), radius: 3)
+            .shadow(color: .black, radius: 0, x: edge, y: edge)
+            .shadow(color: .black, radius: 0, x: -edge, y: -edge)
+            .shadow(color: .black, radius: 0, x: edge, y: -edge)
+            .shadow(color: .black, radius: 0, x: -edge, y: edge)
+            .shadow(color: .black.opacity(0.7), radius: edge * 3)
     }
 
     /// 影片實際顯示的範圍：填滿模式就是整個畫面；完整顯示時依影片比例置中

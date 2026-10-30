@@ -196,8 +196,7 @@ struct ResumeBanner: View {
             // 白色實心膠囊、黑字：霧面底上唯一的實色，一眼看得出可以按
             Button("StartOver", action: onStartOver)
                 .font(.subheadline.weight(.semibold))
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
+                .wpPrimaryButton()
                 .controlSize(.small)
                 .tint(.white)
                 .foregroundStyle(.black)

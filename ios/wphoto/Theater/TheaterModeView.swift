@@ -34,7 +34,7 @@ struct TheaterModeView: View {
     var body: some View {
         ZStack {
             // 上淺下深的微漸層：材質卡片不會貼在死黑上
-            Rectangle().fill(WPTheme.backdrop).ignoresSafeArea()
+            CinemaBackdrop()
             if let name = session.openingName {
                 FolderProgressView(title: String(format: String(localized: "OpeningLocation"), name)) {
                     session.closeFolder()
@@ -46,15 +46,14 @@ struct TheaterModeView: View {
             } else if session.files.isEmpty && session.folders.isEmpty {
                 // 空資料夾：說明支援的格式，並給「上一層／常用位置／選資料夾」三條路離開
                 ContentUnavailableView {
-                    Label { Text("NoVideos") } icon: { Image(systemName: "film.stack").foregroundStyle(Color.wpAccent) }
+                    Label { Text("NoVideos") } icon: { Image(systemName: "film.stack").foregroundStyle(Color.wpSecondaryLabel) }
                 } description: {
                     Text("VideoFormatNote")
                 } actions: {
                     if session.canGoUp { Button("UpOneLevel") { session.goUp() } }
                     Button("Locations") { session.closeFolder() }
                     Button("ChooseFolder") { showPicker = true }
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
+                        .wpPrimaryButton()
                 }
             } else {
                 ScrollView {
@@ -69,7 +68,7 @@ struct TheaterModeView: View {
                                 }
                                 .buttonStyle(CardPressStyle())
                                 .wpHoverLift()
-                                .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: WPTheme.Radius.card, style: .continuous))
+                                .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: WPTheme.Radius.poster, style: .continuous))
                             }
                         }
                         if !session.files.isEmpty {
@@ -174,7 +173,7 @@ struct EpisodeCard: View {
         let refreshToken: Int
     }
 
-    private static let shape = RoundedRectangle(cornerRadius: WPTheme.Radius.card, style: .continuous)
+    private static let shape = RoundedRectangle(cornerRadius: WPTheme.Radius.poster, style: .continuous)
 
     /// 標題不帶副檔名；格式改放到第二行
     private var displayTitle: String { (file.relativeName as NSString).deletingPathExtension }
@@ -216,7 +215,7 @@ struct EpisodeCard: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.callout.weight(.semibold))
                             .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, .green)
+                            .foregroundStyle(Color.wpBackground, Color.wpLabel)
                             .padding(4)
                             .background(.ultraThinMaterial, in: Circle())
                             .padding(8)

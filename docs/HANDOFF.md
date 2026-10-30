@@ -105,11 +105,22 @@
   - 首頁：`App/ModeSelectView.swift`；從首頁開回某一層用 `FolderSession.openSaved(_:subfolders:)`。
   - 等使用者說「可以推」才 commit、push、編 IPA。
 
-### iOS UI 翻新（2026-10-28，在工作樹裡、尚未 commit）
+### iOS UI 翻新（2026-10-28，已 commit）
 
 - 做了 9 個「快速見效」項目：`Shared/Theme.swift` 設計 token、首頁 large title 與材質模式卡、常用位置空狀態與「…」選單、縮圖牆 Button 化與空狀態、檢視器 44pt 圓鈕與 iPad 右側拍攝資訊欄、海報牆陰影與漸層佔位、集數卡片去副檔名與材質徽章、VLC 控制列（中央播放群、材質面板、自製進度條、滑鼠支援、觸覺）、AVPlayer 續播提示與片名。
 - 完整計畫、備註與下一輪的 B／C 級清單在桌面 `wphoto-ui-shots/UI翻新總結.md`（含截圖）。使用者看過核准後才 commit。
 - 第二輪再做了 VLC 手勢（雙擊兩側 ±10 秒、捏合填滿、下滑關閉；手勢只編譯過、沒在模擬器實際操作）與檢視器的側欄（`HStack`，照片會縮到左邊）、下拉關閉、iOS 18 zoom 轉場。
+
+### iOS 電影院配色與字幕大小（2026-10-31）
+
+- 配色概念是「熄燈後的放映廳」：唯一的彩色是絨布紅，其餘都是暖黑與象牙白。token 都在 `Shared/Theme.swift`，檔案開頭有規則。不要再加第二個強調色，也不要用藍色。
+- 紅色對深色底只有 3.3:1，只能當填色與圖示，不能當小字。紅色只留給播放、進度、主要按鈕；文字與導覽列用象牙白。
+- 卡片是霧面實色（拿掉 Liquid Glass），圓角縮小，標題用襯線字（`App/wphotoApp.swift` 的 UINavigationBar appearance），分區標題是寬字距小字。
+- 系統控制項的藍色靠兩處換掉：`project.yml` 的全域 AccentColor，以及 `wphotoApp.swift` 裡檔案挑選器的 tintColor（它不吃全域強調色）。
+- 照片模式不開紅光（`CinemaBackdrop(glow: false)`），避免影響看照片的色偏判斷。
+- 字幕字級在 `VLCPlayerScreen.swift` 的 `subtitleFontSize`：影片高度 6.5%、同時看寬度，上限是一行放得下 16 字，下限 20pt。**不要再加固定點數上限**：舊版 56pt 上限在 4K 視窗只剩畫面的 2.6%。
+- 參考值：YouTube 預設字幕實測是播放器高度的 4.44%（360p 到 4K 都一樣，沒有上限）；Netflix 規範沒有百分比，只要求相對影片解析度、繁中一行 16 字、英文 42 字。
+- AVPlayer 的內嵌字幕由系統繪製，跟隨 iOS 的字幕設定，大小沒有實測。
 
 ### 其他
 
