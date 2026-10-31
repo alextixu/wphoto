@@ -16,7 +16,7 @@
 
 1. **先給使用者看改了什麼，核准後才 commit。**
 2. **push 只有使用者明確說「可以推」才做**，任何分支都一樣；要跑 CI 也要先問。
-3. **commit 作者只能是 `lintaixu`**，commit 訊息**不加** Claude 的 Co-Authored-By 署名。
+3. **commit 作者只能是 `alextixu`**（原 `lintaixu`，2026-10-31 起一律用新名字），commit 訊息**不加** Claude 的 Co-Authored-By 署名。
 4. 每次功能變更都要同步：README（中英雙語，含截圖）、GitHub Release 的 zip、repo 的 topics/description。
 5. README 截圖只用 `demo` 資料夾的 CC0 素材，**不用使用者的個人照片**。
 6. UI 文字三語同步：Windows 版在 `Localization.cs`；iOS 版在 `ios/wphoto/Resources/*.lproj/Localizable.strings`（en / zh-Hant / zh-Hans 三份的 key 要一致）。
@@ -36,11 +36,11 @@
    ```bash
    git clone https://github.com/alextixu/wphoto.git PhotoViewer
    cd PhotoViewer
-   git config user.name lintaixu
+   git config user.name alextixu
    git worktree add ../wphoto-ios ios
    ```
 
-   `user.email` 請自行設成 lintaixu 的 GitHub 信箱。
+   `user.email` 請自行設成 alextixu 的 GitHub 信箱。
 4. 要把 IPA 裝到 iPhone 的話，再裝 Sideloadly。**不需要 Mac**，iOS 版在 GitHub Actions 上編譯。
 5. 舊電腦的 Claude 記憶在 `C:\Users\<使用者>\.claude\projects\<專案路徑>\memory\`，可以整個資料夾複製到新電腦對應的位置。這份文件已經整理了其中跟專案有關的內容，不複製也可以。
 
