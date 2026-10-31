@@ -1,20 +1,71 @@
 # wphoto
 
-**Blazing-fast RAW photo viewer & culler for Fujifilm / Sony shooters — with a built-in theater mode for your video library.**
+**A fast RAW photo viewer and a home theater for your own video library, on Windows, iPhone, iPad and Mac.**
 Opens an 80 MB RAF in a blink by reading the camera's embedded full-size preview, and plays 10-bit H.265 MKV without installing a single codec.
 
-**專為 Fuji / Sony 使用者打造的極速 RAW 篩片工具，內建看劇模式**——RAW 秒開、4K HEVC 直接播。
+**極速 RAW 看圖工具，加上你自己影片庫的家庭劇院，支援 Windows、iPhone、iPad 與 Mac。**RAW 秒開、4K HEVC 直接播，免裝解碼器。
 
-![screenshot](docs/screenshot.png)
+![wphoto poster wall on iPad](docs/ios-posters.jpg)
+
+| Platform · 平台 | Get it · 取得方式 | Source · 原始碼 |
+|---|---|---|
+| Windows | [Download from Releases](https://github.com/alextixu/wphoto/releases) | Repository root · 根目錄 |
+| iPhone · iPad | Build with Xcode, or sideload · [Install guide](ios/README.md#install-on-your-iphone--安裝到-iphone) | [`ios/`](ios/) |
+| Mac (Apple silicon) | Run the iPad app from Xcode as "Designed for iPad" | [`ios/`](ios/) |
+
+**UI in your language** — Traditional Chinese, Simplified Chinese, and English. The iPhone app follows your system language; the Windows app detects it and lets you switch anytime.
+**三語介面**——繁體中文、简体中文、English。iPhone 版跟隨系統語言，Windows 版自動偵測，也可以隨時切換。
+
+## iPhone, iPad & Mac · iPhone、iPad 與 Mac 版
+
+| Home · 首頁 | Player · 播放 |
+|---|---|
+| ![Home screen with Continue Watching](docs/ios-home.jpg) | ![Video player with subtitles](docs/ios-player.jpg) |
+| **Episodes · 集數** | **Shooting info · 拍攝資訊** |
+| ![Episode list with progress](docs/ios-episodes.jpg) | ![Photo viewer with shooting info panel](docs/ios-viewer.jpg) |
+
+<p align="center">
+  <img src="docs/iphone-home.jpg" width="260" alt="Home screen on iPhone">
+  &nbsp;&nbsp;
+  <img src="docs/iphone-posters.jpg" width="260" alt="Poster wall on iPhone">
+</p>
+
+- **Cinema-style interface** — warm black with a single velvet red accent, so posters and photos are the brightest things on screen
+- **Poster wall** — movie folders appear as 2:3 posters with title and year, using your `poster`, `folder`, `cover` or `fanart` image
+- **Continue Watching** — both players resume where you stopped, and the home screen lists unfinished videos and recent locations
+- **Plays almost anything** — MP4 and MOV through AVPlayer keep HDR, Dolby Vision, Picture in Picture and AirPlay; MKV, AVI, TS, WebM and more play through VLCKit
+- **Subtitles that fit any screen** — text scales with the picture from a phone to a 4K display, with dual subtitles and embedded MKV text tracks
+- **Stays awake while you watch** — the screen stays on during playback and long downloads, and sleeps normally when paused
+- **RAW and HEIF photos** — thumbnail grid, pinch to zoom with full-resolution reload, and a full shooting info panel
+- **Folders from anywhere in Files** — iCloud Drive, on-device storage, or a NAS connected in the Files app
+
+Full details, player selection and subtitle rules are in [`ios/README.md`](ios/README.md).
+
+<details>
+<summary>中文功能說明</summary>
+
+- **電影院風格介面**：暖黑配單一絨布紅，讓海報和照片成為畫面上最亮的東西
+- **電影海報牆**：電影資料夾以 2:3 海報呈現，顯示片名與年份，封面取自 `poster`、`folder`、`cover` 或 `fanart`
+- **繼續觀看**：兩種播放器都會記住看到哪裡，首頁列出看到一半的影片與最近位置
+- **幾乎都能播**：MP4、MOV 走 AVPlayer，保留 HDR、杜比視界、子母畫面與 AirPlay；MKV、AVI、TS、WebM 等走 VLCKit
+- **任何螢幕都清楚的字幕**：字幕隨畫面等比例縮放，從手機到 4K 都適用，支援雙字幕與 MKV 內嵌文字字幕
+- **看片不休眠**：播放與長時間下載時螢幕不會自動關閉，暫停後恢復正常休眠
+- **RAW 與 HEIF 照片**：縮圖牆、捏合縮放並重新載入完整解析度、完整拍攝資訊面板
+- **從「檔案」開啟任何位置**：iCloud 雲碟、本機，或在「檔案」App 連接的 NAS
+
+完整說明、播放引擎選擇與字幕規則請看 [`ios/README.md`](ios/README.md)。
+
+</details>
+
+## Windows · Windows 版
+
+![Windows photo mode](docs/screenshot.png)
 
 Two modes at startup · 啟動時選擇模式：
 
-![modes](docs/screenshot-modes.png)
+![Windows mode picker](docs/screenshot-modes.png)
 
-**UI in your language** — Traditional Chinese, Simplified Chinese, and English. Auto-detected from your system, switchable anytime (mode screen or toolbar), remembered across sessions.
-**三語介面**——繁體中文、简体中文、English，依系統語言自動選擇，隨時可切換並記住偏好。
-
-## Photo mode · 照片模式
+### Photo mode · 照片模式
 
 - **20+ RAW formats** — RAF, ARW, CR2/CR3, NEF, DNG, ORF, RW2 and more (via LibRaw). Embedded-preview fast path, full decode as fallback
 - **JPEG / HEIF (.HIF)** — every Fuji / Sony still format, HEIF decoded without system extensions
@@ -23,7 +74,7 @@ Two modes at startup · 啟動時選擇模式：
 - **Thumbnail gallery** on folder open — RAW embedded previews appear in a blink, click any to view
 - **Recursive folder scan** with file-type filter (only shows types that actually exist in the folder)
 
-## Theater mode · 看劇模式
+### Theater mode · 看劇模式
 
 - **Episode picker with covers** — open a whole season folder and pick an episode from a thumbnail grid (Netflix-style)
 - **Plays everything** — MP4 (XAVC S/HS), MOV, MKV, MTS/M2TS (AVCHD), AVI, MXF via bundled LibVLC; 10-bit H.265 / Dolby Vision files just work
@@ -51,7 +102,7 @@ Two modes at startup · 啟動時選擇模式：
 
 </details>
 
-## Playback capabilities · 播放能力與限制
+### Playback capabilities · 播放能力與限制
 
 Everything mainstream opens and plays — the limits below are about *presentation quality*, inherited from the LibVLC 3 engine (same as VLC itself):
 
@@ -82,13 +133,13 @@ Everything mainstream opens and plays — the limits below are about *presentati
 
 </details>
 
-## Download · 下載
+### Download · 下載
 
 Grab the latest zip from [Releases](https://github.com/alextixu/wphoto/releases), unzip, run `wphoto.exe`. No installation, no .NET runtime, no codecs required.
 
 從 [Releases](https://github.com/alextixu/wphoto/releases) 下載 zip，解壓縮後直接執行 `wphoto.exe`，免安裝、免 .NET、免解碼器。
 
-## Keyboard & mouse · 操作
+### Keyboard & mouse · 操作
 
 | Action | Input |
 |---|---|
@@ -102,7 +153,7 @@ Grab the latest zip from [Releases](https://github.com/alextixu/wphoto/releases)
 | Episode picker | 「選集」 toolbar button |
 | Open folder | Button, or drag & drop a folder onto the window |
 
-## Build from source · 從原始碼建置
+### Build from source · 從原始碼建置
 
 ```
 dotnet build PhotoViewer
@@ -117,13 +168,24 @@ Release build (folder publish + ReadyToRun; produces `dist/wphoto_v<version>_win
 
 Why a folder instead of a single-file exe: a 438 MB single file must be read completely on every cold start — 20 s on a laptop HDD. The folder build starts in ~3 s cold / 0.6 s warm.
 
-## iOS · iPhone 版
+## Repository layout · 專案結構
 
-A native SwiftUI companion app lives in [`ios/`](ios/) — same two modes, opens folders from the Files app (iCloud Drive, On My iPhone, or a NAS connected in Files), Apple-native RAW/HEIF/HDR decoding, plus a movie poster wall, resume playback and Continue Watching on the home screen. See [ios/README.md](ios/README.md) for building with Xcode.
+Everything lives on `main`. The Windows and iOS apps are separate projects that share no code, so each builds on its own.
 
-原生 SwiftUI 的 iPhone 版在 [`ios/`](ios/)：同樣兩種模式，資料夾從「檔案」App 開啟（iCloud／本機／檔案中連接的 NAS），RAW、HEIF、HDR 走 Apple 原生解碼；另有電影海報牆、續看進度與首頁的「繼續觀看」。建置方式見 [ios/README.md](ios/README.md)。
+所有程式碼都在 `main`。Windows 版和 iOS 版是各自獨立的專案，沒有共用程式碼，可以分別建置。
+
+```text
+.
+├── *.cs, *.xaml, PhotoViewer.csproj   Windows app (.NET 9, WPF)
+├── publish.ps1                        Windows release script
+├── ios/                               iPhone, iPad and Mac app (SwiftUI)
+├── docs/                              Screenshots and maintainer notes
+└── .github/workflows/                 iOS build checks
+```
 
 ## Tech stack · 技術
+
+**Windows**
 
 - .NET 9 / WPF + [WPF-UI](https://github.com/lepoco/wpfui) (Fluent)
 - [Sdcb.LibRaw](https://github.com/sdcb/Sdcb.LibRaw) — RAW decoding (LibRaw)
@@ -131,8 +193,13 @@ A native SwiftUI companion app lives in [`ios/`](ios/) — same two modes, opens
 - [LibVLCSharp](https://github.com/videolan/libvlcsharp) — video playback (LibVLC, LGPL-2.1; shipped as separate DLLs)
 - [Magick.NET](https://github.com/dlemstra/Magick.NET) — HEIF decoding
 
+**iPhone, iPad & Mac**
+
+- SwiftUI, with AVFoundation and ImageIO for Apple's native photo and video decoding
+- [MobileVLCKit](https://code.videolan.org/videolan/VLCKit) — playback of MKV and other non-Apple formats (libVLC, LGPL-2.1)
+
 ## License · 授權
 
-[MIT](LICENSE). Video playback uses LibVLC under LGPL-2.1, distributed as separate dynamic libraries in the `libvlc` folder.
+[MIT](LICENSE). Video playback uses LibVLC under LGPL-2.1, distributed as separate dynamic libraries. iOS uses VLCKit under the same license.
 
-Sample images in the screenshot are CC0 from [raw.pixls.us](https://raw.pixls.us).
+Sample photos in the screenshots are CC0 from [raw.pixls.us](https://raw.pixls.us). The posters and video frames in the iOS screenshots were generated for this README, and the titles are fictional.

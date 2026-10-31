@@ -1,13 +1,13 @@
 # wphoto 交接文件
 
-換電腦或開新的 Claude 對話時，先讀這份文件。最後更新：2026-10-27。
+換電腦或開新的 Claude 對話時，先讀這份文件。最後更新：2026-10-31。
 
 ## 專案概況
 
 | 部分 | 位置 | 狀態 |
 |---|---|---|
-| Windows 版（.NET 9 WPF） | `main` 分支，repo 根目錄 | v1.1 已發布；之後的啟動加速、縮圖總覽、`publish.ps1` 已 commit，**尚未發新 Release** |
-| iPhone / iPad 版（SwiftUI） | `ios` 分支的 `ios/` 資料夾 | 可用 GitHub Actions 編出未簽名 IPA，用 Sideloadly 安裝；**還沒合併回 `main`**（`main` 的 README 連到 `ios/`，合併前那個連結會失效） |
+| Windows 版（.NET 9 WPF） | `main`，repo 根目錄 | v1.1 已發布；之後的啟動加速、縮圖總覽、`publish.ps1` 已 commit，**尚未發新 Release** |
+| iPhone / iPad / Mac 版（SwiftUI） | `main` 的 `ios/` 資料夾 | 可用 GitHub Actions 編出未簽名 IPA，用 Sideloadly 安裝；Mac 上以「Designed for iPad」執行 |
 
 - Repo：<https://github.com/alextixu/wphoto>（公開）
 - GitHub 帳號：`alextixu`（原 `lintaixu`，2026-09 改名）
@@ -31,13 +31,12 @@
    gh auth login
    ```
 
-3. 下載程式碼，並另外開一個資料夾放 `ios` 分支（git worktree）：
+3. 下載程式碼：
 
    ```bash
    git clone https://github.com/alextixu/wphoto.git PhotoViewer
    cd PhotoViewer
    git config user.name alextixu
-   git worktree add ../wphoto-ios ios
    ```
 
    `user.email` 請自行設成 alextixu 的 GitHub 信箱。
@@ -57,16 +56,16 @@
 
 ### iOS 版
 
-1. 推送 `ios` 分支。如果 Git Credential Manager 卡住，改用 gh 當認證：
+1. 推送 `main`。如果 Git Credential Manager 卡住，改用 gh 當認證：
 
    ```bash
-   git -c credential.helper= -c "credential.helper=!gh auth git-credential" push origin ios
+   git -c credential.helper= -c "credential.helper=!gh auth git-credential" push origin main
    ```
 
 2. 手動觸發建置（推送本身也會觸發一次）：
 
    ```bash
-   gh workflow run ios.yml --repo alextixu/wphoto --ref ios
+   gh workflow run ios.yml --repo alextixu/wphoto --ref main
    ```
 
 3. 編好後下載 artifact，把 `.ipa` 放到固定的資料夾（舊電腦是 `E:\test_think\ios-build\wphoto-unsigned.ipa`）：
@@ -99,7 +98,7 @@
 ### iOS 四個功能的狀態（2026-10-27）
 
 - **手機相簿滑動整理（PhotoSweep）：使用者決定取消。** 照片模式維持只讀「檔案」裡的照片與相機 RAW，不要求照片圖庫權限。
-- **電影海報牆、續看進度、首頁的「繼續觀看」與「最近位置」：已在 `ios` 分支寫好**，並在 Mac 的 iPad 模擬器上測過。三語字串、README、隱私權政策都已同步。
+- **電影海報牆、續看進度、首頁的「繼續觀看」與「最近位置」：已寫好**，並在 Mac 的 iPad 模擬器上測過。三語字串、README、隱私權政策都已同步。
   - 海報牆：`Theater/PosterGrid.swift`；封面查找與預先讀取的快取在 `Shared/FolderSession.swift` 的 `posterSource(for:)`（同時最多讀 4 個資料夾）。
   - 續看進度：`Theater/WatchProgressStore.swift`（存在 UserDefaults，以影片路徑為 key），AVPlayer 在 `Theater/PlayerScreen.swift`，VLC 用 `:start-time` 從續播位置開檔。
   - 首頁：`App/ModeSelectView.swift`；從首頁開回某一層用 `FolderSession.openSaved(_:subfolders:)`。
@@ -116,14 +115,19 @@
 - 配色概念是「熄燈後的放映廳」：唯一的彩色是絨布紅，其餘都是暖黑與象牙白。token 都在 `Shared/Theme.swift`，檔案開頭有規則。不要再加第二個強調色，也不要用藍色。
 - 紅色對深色底只有 3.3:1，只能當填色與圖示，不能當小字。紅色只留給播放、進度、主要按鈕；文字與導覽列用象牙白。
 - 卡片是霧面實色（拿掉 Liquid Glass），圓角縮小，標題用襯線字（`App/wphotoApp.swift` 的 UINavigationBar appearance），分區標題是寬字距小字。
-- 系統控制項的藍色靠兩處換掉：`project.yml` 的全域 AccentColor，以及 `wphotoApp.swift` 裡檔案挑選器的 tintColor（它不吃全域強調色）。
+- 系統控制項的藍色用 `project.yml` 的全域 AccentColor 換掉。**檔案挑選器是例外**：它是系統畫面，`wphotoApp.swift` 雖然設了 tintColor，實測同一個版本有時紅有時藍，原因不明。要徹底解決得換掉 `.fileImporter`，但那條路徑關係到 NAS 的存取權限，目前不值得冒險。
 - 照片模式不開紅光（`CinemaBackdrop(glow: false)`），避免影響看照片的色偏判斷。
 - 字幕字級在 `VLCPlayerScreen.swift` 的 `subtitleFontSize`：影片高度 6.5%、同時看寬度，上限是一行放得下 16 字，下限 20pt。**不要再加固定點數上限**：舊版 56pt 上限在 4K 視窗只剩畫面的 2.6%。
 - 參考值：YouTube 預設字幕實測是播放器高度的 4.44%（360p 到 4K 都一樣，沒有上限）；Netflix 規範沒有百分比，只要求相對影片解析度、繁中一行 16 字、英文 42 字。
 - AVPlayer 的內嵌字幕由系統繪製，跟隨 iOS 的字幕設定，大小沒有實測。
 
+### 分支與合併（2026-10-31）
+
+- 只留 `main`。Windows 版在根目錄、iOS 版在 `ios/`，兩邊沒有共用程式碼，不需要平台分支。之後新功能開短期分支，用 PR 併回 `main`。
+- `main` 的 PR **不要用 GitHub 的合併按鈕或 `gh pr merge --merge`**：GitHub 產生的 merge commit 作者會是個人頁顯示名稱，不是 `alextixu`。先確認 PR 是快轉，再把同一個 commit 直接 push 到 `main`，GitHub 會判定為 merged，編號與作者都不變。
+- README 截圖的海報與影片畫面是程式生成的，照片裁自舊截圖裡的 CC0 範例；`demo` 資料夾不在 Mac 上。
+
 ### 其他
 
 - Windows 版：發新版 Release（啟動加速、縮圖總覽），並同步 README 截圖。
-- `ios` 分支合併回 `main` 的時機由使用者決定。
 - 可以考慮：讓 CI 裡「在 Mac 上啟動」那一步只在有簽名憑證時才跑（目前用 ad-hoc 簽名一定會失敗，已設為 continue-on-error）。

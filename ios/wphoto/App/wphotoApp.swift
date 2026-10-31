@@ -9,7 +9,8 @@ struct WphotoApp: App {
         // 靜音開關打開時影片仍有聲音（看劇模式）
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         Self.styleNavigationTitles()
-        // 系統的檔案挑選器在另一個行程裡跑，不吃 App 的強調色，只認它自己 view 的 tintColor
+        // 系統的檔案挑選器在另一個行程裡跑，不吃 App 的強調色，只能設它自己 view 的 tintColor。
+        // 實測不穩定：同一個版本有時紅有時藍，原因不明，所以只算盡力而為
         UIView.appearance(whenContainedInInstancesOf: [UIDocumentPickerViewController.self]).tintColor = UIColor(Color.wpAccent)
     }
 
