@@ -9,9 +9,27 @@ struct WphotoApp: App {
         // 靜音開關打開時影片仍有聲音（看劇模式）
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         Self.styleNavigationTitles()
-        // 系統的檔案挑選器在另一個行程裡跑，不吃 App 的強調色，只能設它自己 view 的 tintColor。
-        // 實測不穩定：同一個版本有時紅有時藍，原因不明，所以只算盡力而為
-        UIView.appearance(whenContainedInInstancesOf: [UIDocumentPickerViewController.self]).tintColor = UIColor(Color.wpAccent)
+        Self.tintWindows()
+    }
+
+    /// 整個視窗的 tintColor 設成象牙白（和全域 AccentColor 同色），檔案挑選器才不會變成系統藍。
+    /// 挑選器（.fileImporter）是「檔案」行程畫的遠端畫面，UIKit 只在它的宿主 view（_UISceneHostingView）
+    /// trait 改變時把 tint 送過去，主要是進入視窗的那一刻；之後 tint 再變也不會補送。
+    /// 以前用 appearance(whenContainedInInstancesOf: [UIDocumentPickerViewController.self]) 設紅色，
+    /// 但 appearance 比那一刻晚才套上：挑選器和遠端畫面一起加進視窗時（服務已經熱身）送出去的是
+    /// 預設的 systemBlue，遠端畫面晚一點才接上時才是紅色，所以同一個版本有時紅有時藍。
+    /// 視窗的 tint 從一開始就在，任何 view 一進視窗就繼承得到，每次送過去的都是象牙白。
+    /// UIWindow.appearance() 套不到 SwiftUI 建的視窗，所以在視窗出現時直接設；
+    /// 只設一般層級的視窗（iPad 可以開多個），鍵盤等系統視窗不碰
+    private static func tintWindows() {
+        let ivory = UIColor(Color.wpLabel)
+        NotificationCenter.default.addObserver(forName: UIWindow.didBecomeVisibleNotification,
+                                               object: nil, queue: .main) { note in
+            MainActor.assumeIsolated {
+                guard let window = note.object as? UIWindow, window.windowLevel == .normal else { return }
+                window.tintColor = ivory
+            }
+        }
     }
 
     /// 導覽列標題用襯線字（New York）：標題是整個畫面的門面，像片頭字卡一樣比無襯線體端莊。

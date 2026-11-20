@@ -8,13 +8,17 @@ typealias ProgressReporter = @MainActor (_ positionMs: Int, _ durationMs: Int) -
 /// 字幕／音軌選單、子母畫面與 AirPlay；HDR / Dolby Vision / Atmos 由 iOS 原生處理。
 /// AVPlayer 開不了檔（例如不支援的編碼）時呼叫 onFailure，由上層改用 VLC。
 /// 有續播位置時從那裡開始，並提示「從頭播放」。
+///
+/// 內嵌字幕由系統繪製，大小跟著「設定 › 輔助使用 › 字幕與隱藏式字幕 › 樣式」（預設約影片高度的 4.4%，有深色底框）。
+/// App 改不了：AVPlayerItem.textStyleRules 依標頭檔說明只對 WebVTT 字幕軌有效，
+/// MP4／MOV 常見的 tx3g 字幕實測連字級、顏色都不理（iOS 27）；tx3g 檔案裡自己寫的字級也不理。
+/// 而且 iOS 27 把 textStyleRules 設成 nil 會閃退（MediaToolbox 對 NULL 呼叫 CFArrayGetCount）
 struct PlayerScreen: View {
     let url: URL
     var resumeMs: Int? = nil
     var onProgress: ProgressReporter = { _, _ in }
     var onFailure: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var startOverRequest = 0
     @State private var showResume = false
 
@@ -24,10 +28,16 @@ struct PlayerScreen: View {
             PlayerView(url: url, resumeMs: resumeMs, startOverRequest: startOverRequest,
                        onProgress: onProgress, onFailure: onFailure)
                 .ignoresSafeArea()
-            // 手機是往下滑就能關的 sheet，用 chevron.down；iPad／Mac 是視窗慣例，用 xmark
-            ChromeButton(systemImage: sizeClass == .regular ? "xmark" : "chevron.down", label: "Close") { dismiss() }
-                .padding(.leading, 16)
-                .padding(.top, 8)
+            // 關閉鈕用 AVKit 自己的：AVPlayerViewController 放在全螢幕呈現（fullScreenCover）的畫面裡時，
+            // AVKit 把自己當成被呈現的播放器（標頭檔 willBeginFullScreenPresentation 的說明），左上角會有它的關閉鈕
+            // （和子母畫面、AirPlay 同一組，跟著控制列顯示／隱藏），按下去關掉整個播放畫面。
+            // 以前另外疊的 ChromeButton 剛好蓋在它上面。
+            // Mac（Designed for iPad）還沒確認 AVKit 有沒有這顆，先保留自己的按鈕
+            if ProcessInfo.processInfo.isiOSAppOnMac {
+                ChromeButton(systemImage: "xmark", label: "Close") { dismiss() }
+                    .padding(.leading, 16)
+                    .padding(.top, 8)
+            }
             // 鍵盤快捷鍵（Mac、iPad 外接鍵盤）：Esc 關閉。放在隱形按鈕上，AVKit 控制列隱藏後仍然有效
             Button("Close") { dismiss() }
                 .keyboardShortcut(.cancelAction)
