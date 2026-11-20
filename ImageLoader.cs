@@ -214,6 +214,42 @@ public static class ImageLoader
         return small;
     }
 
+    // ---------- 海報（看劇模式的海報牆） ----------
+
+    /// <summary>
+    /// 載入海報：整張圖縮到剛好蓋滿 boxWidth×boxHeight 的框（不用內嵌的小縮圖，太糊）。
+    /// 比框寬的圖（橫的 fanart）以高度為準，裁切後才不會糊。檔案只讀一次，NAS 上不必開兩次檔；回傳前已 Freeze
+    /// </summary>
+    public static BitmapSource LoadCover(string path, int boxWidth, int boxHeight)
+    {
+        byte[] data = File.ReadAllBytes(path);
+        try
+        {
+            var frame = BitmapDecoder.Create(new MemoryStream(data), BitmapCreateOptions.DelayCreation,
+                BitmapCacheOption.None).Frames[0];
+            bool wider = (long)frame.PixelWidth * boxHeight > (long)frame.PixelHeight * boxWidth;
+            var bi = new BitmapImage();
+            bi.BeginInit();
+            bi.StreamSource = new MemoryStream(data);
+            bi.CacheOption = BitmapCacheOption.OnLoad;
+            if (wider)
+                bi.DecodePixelHeight = Math.Min(boxHeight, frame.PixelHeight);
+            else
+                bi.DecodePixelWidth = Math.Min(boxWidth, frame.PixelWidth);
+            bi.EndInit();
+            bi.Freeze();
+            return bi;
+        }
+        catch
+        {
+            // WPF 解不開的格式（沒裝 WebP 擴充等）→ Magick.NET
+            using var mi = new ImageMagick.MagickImage(data);
+            mi.AutoOrient();
+            mi.Thumbnail((uint)(boxWidth * 2), (uint)(boxHeight * 2));
+            return FromJpegBytes(mi.ToByteArray(ImageMagick.MagickFormat.Bmp), Rotation.Rotate0);
+        }
+    }
+
     static Rotation OrientationToRotation(int orientation) => orientation switch
     {
         6 => Rotation.Rotate90,

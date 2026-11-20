@@ -9,6 +9,8 @@
             <ResourceDictionary.MergedDictionaries>
                 <ui:ThemesDictionary Theme="Dark" />
                 <ui:ControlsDictionary />
+                <!-- 電影院配色：排在 WPF-UI 後面，同名的 key 才蓋得過預設的藍色與冷灰 -->
+                <ResourceDictionary Source="Theme.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

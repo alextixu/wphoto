@@ -12,97 +12,265 @@
         Height="900" Width="1500"
         WindowStartupLocation="CenterScreen"
         WindowBackdropType="None"
-        Background="#FF0A0A0A"
+        Background="{StaticResource Wp.Background}"
+        Foreground="{StaticResource Wp.Label}"
         ExtendsContentIntoTitleBar="True"
         WindowCornerPreference="Round"
         Icon="pack://application:,,,/app.ico"
         AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver">
+    <!-- 色票、按鈕樣式與 WPF-UI 的覆寫都在 Theme.xaml（與 iOS 版 Theme.swift 同一套） -->
     <ui:FluentWindow.Resources>
-        <!-- Apple 深色系配色 -->
-        <SolidColorBrush x:Key="MacAccent" Color="#0A84FF"/>
-        <SolidColorBrush x:Key="MacLabel" Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="MacSecondaryLabel" Color="#98989D"/>
-        <SolidColorBrush x:Key="MacCardBg" Color="#FF1C1C1E"/>
-        <SolidColorBrush x:Key="MacHover" Color="#14FFFFFF"/>
-        <SolidColorBrush x:Key="MacPhotoBg" Color="#FF000000"/>
-
-        <!-- macOS 簡介面板式的資訊列：左灰標籤、右白值 -->
+        <!-- 資訊面板的一列：左灰標籤、右象牙白值 -->
         <DataTemplate x:Key="InfoRowTemplate">
             <Grid Margin="14,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="100"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding Label}" Foreground="{StaticResource MacSecondaryLabel}"
+                <TextBlock Text="{Binding Label}" Foreground="{StaticResource Wp.SecondaryLabel}"
                            FontSize="12" TextWrapping="Wrap" VerticalAlignment="Top"/>
-                <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="{StaticResource MacLabel}"
+                <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="{StaticResource Wp.Label}"
                            FontSize="12" TextWrapping="Wrap" VerticalAlignment="Top"
                            TextAlignment="Right"/>
             </Grid>
         </DataTemplate>
 
-        <Style x:Key="CardTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource MacSecondaryLabel}"/>
+        <Style x:Key="CardTitle" TargetType="TextBlock" BasedOn="{StaticResource Wp.SectionTitle}">
             <Setter Property="FontSize" Value="11"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Margin" Value="16,0,16,6"/>
         </Style>
 
+        <!-- 霧面卡片：實色底 + 細邊框，不用半透明材質（放映廳要的是絨布般吸光的質感） -->
         <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource MacCardBg}"/>
+            <Setter Property="Background" Value="{StaticResource Wp.Card}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Wp.Stroke}"/>
+            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Margin" Value="12,0,12,14"/>
             <Setter Property="Padding" Value="0,8"/>
         </Style>
-        <!-- 縮圖牆卡片（照片模式與看劇模式共用）。
+
+        <!-- 縮圖角落的小徽章（RAW）：安靜的暖灰底，不用彩色 -->
+        <Style x:Key="Badge" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Wp.Muted}"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="5,1"/>
+        </Style>
+
+        <!-- 照片模式縮圖牆的卡片。
              每張卡片外框固定 224×172（縮圖區 126 高 + 檔名固定兩行高），一行、兩行檔名的卡片一樣大，
-             WrapPanel 才會排成整齊的格線。Button 的 Padding／邊框歸零、內容撐滿、靠上對齊，
-             不讓任何元素把卡片撐大或在同一列上下錯位 -->
+             WrapPanel 才會排成整齊的格線 -->
         <DataTemplate x:Key="GalleryCardTemplate">
-            <ui:Button Appearance="Transparent" Padding="0" BorderThickness="0" Margin="8"
-                       Width="224" Height="172"
-                       HorizontalAlignment="Left" VerticalAlignment="Top"
-                       HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
-                       CornerRadius="10" Cursor="Hand"
-                       Click="Episode_Click" Tag="{Binding}">
+            <Button Style="{StaticResource Wp.CardButton}" Margin="8" Width="224" Height="172"
+                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                    Click="Episode_Click" Tag="{Binding}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="126"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
+                    <Border Background="{StaticResource Wp.Card}" CornerRadius="4"
+                            Effect="{StaticResource Wp.TileShadow}"/>
                     <!-- 縮圖區：ClipToBounds 只會裁成直角，改用與卡片同尺寸（224×126）的圓角 Clip -->
-                    <Border Background="#FF1C1C1E" CornerRadius="10">
-                        <Border.Clip>
-                            <RectangleGeometry Rect="0,0,224,126" RadiusX="10" RadiusY="10"/>
-                        </Border.Clip>
-                        <Grid>
-                            <TextBlock Text="{Binding Glyph}" FontSize="36"
+                    <Grid>
+                        <Grid.Clip>
+                            <RectangleGeometry Rect="0,0,224,126" RadiusX="4" RadiusY="4"/>
+                        </Grid.Clip>
+                        <ui:SymbolIcon Symbol="Image24" FontSize="30" Foreground="{StaticResource Wp.TertiaryLabel}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <!-- UniformToFill 置中裁切（預設 Stretch 對齊時，比格子大的圖會從左上角裁） -->
-                            <Image Source="{Binding Thumb}" Stretch="UniformToFill"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <Border Background="#CC8E5A2B" CornerRadius="4" Padding="5,1" Margin="8"
-                                    HorizontalAlignment="Left" VerticalAlignment="Top"
-                                    Visibility="{Binding RawBadgeVisibility}">
-                                <TextBlock Text="RAW" Foreground="White" FontSize="9" FontWeight="Bold"/>
-                            </Border>
-                        </Grid>
-                    </Border>
+                        <!-- UniformToFill 置中裁切（預設 Stretch 對齊時，比格子大的圖會從左上角裁） -->
+                        <Image Source="{Binding Thumb}" Stretch="UniformToFill"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border Style="{StaticResource Badge}" Margin="8"
+                                HorizontalAlignment="Left" VerticalAlignment="Top"
+                                Visibility="{Binding RawBadgeVisibility}">
+                            <TextBlock Text="RAW" Foreground="{StaticResource Wp.Label}" FontSize="9" FontWeight="Bold"/>
+                        </Border>
+                    </Grid>
+                    <Border CornerRadius="4" BorderBrush="{StaticResource Wp.Stroke}" BorderThickness="1"/>
                     <!-- 檔名：固定兩行高（行高 16 × 2），超過兩行以省略號結尾 -->
-                    <TextBlock Grid.Row="1" Text="{Binding Name}" Foreground="White" FontSize="12"
+                    <TextBlock Grid.Row="1" Text="{Binding Name}" Foreground="{StaticResource Wp.Label}" FontSize="12"
                                Margin="4,7,4,0" Height="32" VerticalAlignment="Top"
                                LineHeight="16" LineStackingStrategy="BlockLineHeight"
                                TextWrapping="Wrap" TextTrimming="CharacterEllipsis" TextAlignment="Center"/>
                 </Grid>
-            </ui:Button>
+            </Button>
         </DataTemplate>
-        <!-- 卡片等大、間距一致；整個格線水平置中，左右留白對稱 -->
+
+        <!-- 看劇模式的影片卡片：16:9 畫面（像片框，圓角 4）＋看到哪裡的紅色進度條、看完打勾＋片名（不含副檔名）＋格式與時長 -->
+        <DataTemplate x:Key="EpisodeCardTemplate">
+            <Button Style="{StaticResource Wp.CardButton}" Margin="0,0,18,22" Width="240"
+                    VerticalAlignment="Top" Click="Episode_Click" Tag="{Binding}" ToolTip="{Binding Name}">
+                <StackPanel>
+                    <Grid Height="135">
+                        <Border Background="{StaticResource Wp.Card}" CornerRadius="4"
+                                Effect="{StaticResource Wp.TileShadow}"/>
+                        <Grid>
+                            <Grid.Clip>
+                                <RectangleGeometry Rect="0,0,240,135" RadiusX="4" RadiusY="4"/>
+                            </Grid.Clip>
+                            <ui:SymbolIcon Symbol="Filmstrip24" FontSize="30" Foreground="{StaticResource Wp.TertiaryLabel}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Image Source="{Binding Thumb}" Stretch="UniformToFill"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Rectangle Fill="{StaticResource Wp.ThumbShade}" Visibility="{Binding ThumbVisibility}"/>
+                            <!-- 看完：左上角打勾 -->
+                            <Border Width="24" Height="24" CornerRadius="12" Margin="8"
+                                    Background="{StaticResource Wp.Label}"
+                                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                                    Visibility="{Binding WatchedVisibility}"
+                                    ToolTip="{DynamicResource L.Watched}">
+                                <ui:SymbolIcon Symbol="Checkmark16" FontSize="14" Foreground="{StaticResource Wp.Background}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <!-- 看到一半：底部進度條（左右內縮，不貼邊） -->
+                            <Grid Height="3" Margin="8,0,8,8" VerticalAlignment="Bottom"
+                                  Visibility="{Binding ProgressVisibility}">
+                                <Border CornerRadius="1.5" Background="#4DF2ECE4"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="{Binding ProgressDone}"/>
+                                        <ColumnDefinition Width="{Binding ProgressRest}"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="1.5" Background="{StaticResource Wp.Accent}"/>
+                                </Grid>
+                            </Grid>
+                        </Grid>
+                        <Border CornerRadius="4" BorderBrush="{StaticResource Wp.Stroke}" BorderThickness="1"/>
+                    </Grid>
+                    <!-- 片名固定兩行高，整排卡片對齊 -->
+                    <TextBlock Text="{Binding Title}" Foreground="{StaticResource Wp.Label}" FontSize="13" FontWeight="Medium"
+                               Margin="0,8,0,0" Height="36" LineHeight="18" LineStackingStrategy="BlockLineHeight"
+                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Subtitle}" Foreground="{StaticResource Wp.SecondaryLabel}" FontSize="11"
+                               TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+            </Button>
+        </DataTemplate>
+
+        <!-- 海報牆：電影資料夾顯示成直式 2:3 海報＋片名＋年份 -->
+        <DataTemplate x:Key="PosterTemplate">
+            <Button Style="{StaticResource Wp.CardButton}" Margin="0,0,22,26" Width="150"
+                    VerticalAlignment="Top" Click="Poster_Click" Tag="{Binding}" ToolTip="{Binding Name}">
+                <StackPanel>
+                    <Grid Width="150" Height="225">
+                        <Border Background="{StaticResource Wp.Card}" CornerRadius="4"
+                                Effect="{StaticResource Wp.PosterShadow}"/>
+                        <Grid>
+                            <Grid.Clip>
+                                <RectangleGeometry Rect="0,0,150,225" RadiusX="4" RadiusY="4"/>
+                            </Grid.Clip>
+                            <!-- 沒封面：深色片框＋襯線首字，像片盒側標 -->
+                            <Border Background="{StaticResource Wp.PosterPlaceholder}"
+                                    Visibility="{Binding PlaceholderVisibility}">
+                                <TextBlock Text="{Binding Initial}" FontFamily="{StaticResource Wp.SerifFont}" FontSize="48"
+                                           Foreground="{StaticResource Wp.SecondaryLabel}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <Image Source="{Binding Image}" Stretch="UniformToFill"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                        </Grid>
+                        <Border CornerRadius="4" BorderBrush="{StaticResource Wp.Stroke}" BorderThickness="1"/>
+                    </Grid>
+                    <!-- 片名區固定兩行高，整排海報對齊 -->
+                    <TextBlock Text="{Binding Title}" Foreground="{StaticResource Wp.Label}" FontSize="13" FontWeight="SemiBold"
+                               Margin="0,9,0,0" Height="36" LineHeight="18" LineStackingStrategy="BlockLineHeight"
+                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Year}" Foreground="{StaticResource Wp.SecondaryLabel}" FontSize="11"
+                               Visibility="{Binding YearVisibility}"/>
+                </StackPanel>
+            </Button>
+        </DataTemplate>
+
+        <!-- 首頁「繼續觀看」的一列：紅色播放圖示、片名、所在位置與看到哪裡、進度條 -->
+        <DataTemplate x:Key="ContinueRowTemplate">
+            <Button Style="{StaticResource Wp.RowButton}" Margin="0,0,0,10" Click="Continue_Click" Tag="{Binding}">
+                <Button.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="{DynamicResource L.RemoveFromContinueWatching}" Click="RemoveContinue_Click" Tag="{Binding}"/>
+                    </ContextMenu>
+                </Button.ContextMenu>
+                <Border Background="{StaticResource Wp.Card}" BorderBrush="{StaticResource Wp.Stroke}" BorderThickness="1"
+                        CornerRadius="10" Padding="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ui:SymbolIcon Symbol="PlayCircle24" Filled="True" FontSize="32"
+                                       Foreground="{StaticResource Wp.Accent}" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" Margin="12,0">
+                            <TextBlock Text="{Binding Title}" Foreground="{StaticResource Wp.Label}" FontSize="13"
+                                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Detail}" Foreground="{StaticResource Wp.SecondaryLabel}" FontSize="11"
+                                       Margin="0,3,0,7" TextTrimming="CharacterEllipsis"/>
+                            <Grid Height="3">
+                                <Border CornerRadius="1.5" Background="{StaticResource Wp.ProgressTrack}"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="{Binding ProgressDone}"/>
+                                        <ColumnDefinition Width="{Binding ProgressRest}"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="1.5" Background="{StaticResource Wp.Accent}"/>
+                                </Grid>
+                            </Grid>
+                        </StackPanel>
+                        <ui:SymbolIcon Grid.Column="2" Symbol="ChevronRight20" FontSize="14"
+                                       Foreground="{StaticResource Wp.TertiaryLabel}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+            </Button>
+        </DataTemplate>
+
+        <!-- 首頁「最近位置」的一列：模式圖示底塊、位置名稱、上一層資料夾與上次開啟時間 -->
+        <DataTemplate x:Key="RecentRowTemplate">
+            <StackPanel>
+                <!-- 分隔線從文字欄位開始畫：12 邊距 + 36 圖示 + 12 間距 -->
+                <Border Height="1" Margin="60,0,0,0" Background="{StaticResource Wp.Separator}"
+                        Visibility="{Binding SeparatorVisibility}"/>
+                <Button Style="{StaticResource Wp.RowButton}" Click="Recent_Click" Tag="{Binding}">
+                    <Button.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="{DynamicResource L.RemoveFromRecents}" Click="RemoveRecent_Click" Tag="{Binding}"/>
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                    <Grid Margin="12,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <!-- 不分模式都是同一個安靜的深色塊，不靠顏色區分，靠圖形 -->
+                        <Border Width="36" Height="36" CornerRadius="8" Background="{StaticResource Wp.Surface}">
+                            <ui:SymbolIcon Symbol="{Binding Symbol}" FontSize="18" Foreground="{StaticResource Wp.Label}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}" Foreground="{StaticResource Wp.Label}" FontSize="13"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Detail}" Foreground="{StaticResource Wp.SecondaryLabel}" FontSize="11"
+                                       Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <ui:SymbolIcon Grid.Column="2" Symbol="ChevronRight20" FontSize="14"
+                                       Foreground="{StaticResource Wp.TertiaryLabel}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Button>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- 照片縮圖牆：卡片等大、間距一致；整個格線水平置中，左右留白對稱 -->
         <ItemsPanelTemplate x:Key="GalleryPanel">
             <WrapPanel HorizontalAlignment="Center"/>
         </ItemsPanelTemplate>
+        <!-- 看劇模式：海報與影片卡片兩組格線都靠左，左邊緣跟標題對齊 -->
+        <ItemsPanelTemplate x:Key="LeftWrapPanel">
+            <WrapPanel/>
+        </ItemsPanelTemplate>
     </ui:FluentWindow.Resources>
 
-    <Grid>
+    <Grid Background="{StaticResource Wp.Backdrop}">
     <DockPanel>
         <!-- 標題列 -->
         <ui:TitleBar x:Name="AppTitleBar" DockPanel.Dock="Top" Title="wphoto" Height="36">
@@ -121,12 +289,12 @@
                     </ui:Button.Icon>
                 </ui:Button>
                 <TextBlock x:Name="FolderLabel" Text="{DynamicResource L.NoFolderHint}"
-                           Foreground="{StaticResource MacSecondaryLabel}" VerticalAlignment="Center"
+                           Foreground="{StaticResource Wp.SecondaryLabel}" VerticalAlignment="Center"
                            Margin="12,0,0,0" FontSize="12"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <TextBlock x:Name="SubtitleLabel" Text="{DynamicResource L.Subtitle}"
-                           Foreground="{StaticResource MacSecondaryLabel}"
+                           Foreground="{StaticResource Wp.SecondaryLabel}"
                            VerticalAlignment="Center" Margin="0,0,8,0" FontSize="12" Visibility="Collapsed"/>
                 <ComboBox x:Name="SubtitleSelect" MinWidth="170" MaxWidth="260" FontSize="12"
                           Visibility="Collapsed" DisplayMemberPath="Name" Margin="0,0,12,0"
@@ -156,7 +324,7 @@
 
         <!-- 狀態列 -->
         <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Padding="14,6">
-            <TextBlock x:Name="StatusLabel" Text="" Foreground="{StaticResource MacSecondaryLabel}"
+            <TextBlock x:Name="StatusLabel" Text="" Foreground="{StaticResource Wp.SecondaryLabel}"
                        FontSize="11" HorizontalAlignment="Center"/>
         </Border>
 
@@ -183,21 +351,28 @@
                     <Style TargetType="ListBoxItem">
                         <Setter Property="Template">
                             <Setter.Value>
+                                <!-- 選取的列：亮一階的暖灰底＋左側紅色細條（紅色只當填色，字維持象牙白） -->
                                 <ControlTemplate TargetType="ListBoxItem">
                                     <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
                                             Padding="10,5" Margin="0,1">
-                                        <ContentPresenter/>
+                                        <Grid>
+                                            <Border x:Name="Pill" Width="3" CornerRadius="1.5" Margin="-7,2,0,2"
+                                                    HorizontalAlignment="Left" Background="{StaticResource Wp.Accent}"
+                                                    Visibility="Collapsed"/>
+                                            <ContentPresenter/>
+                                        </Grid>
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsSelected" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource MacAccent}"/>
+                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource Wp.Surface}"/>
+                                            <Setter TargetName="Pill" Property="Visibility" Value="Visible"/>
                                         </Trigger>
                                         <MultiTrigger>
                                             <MultiTrigger.Conditions>
                                                 <Condition Property="IsMouseOver" Value="True"/>
                                                 <Condition Property="IsSelected" Value="False"/>
                                             </MultiTrigger.Conditions>
-                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource MacHover}"/>
+                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource Wp.HoverFill}"/>
                                         </MultiTrigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -208,18 +383,17 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Orientation="Horizontal">
-                            <Border Background="#CC8E5A2B" CornerRadius="4" Padding="5,1" Margin="0,0,7,0"
-                                    VerticalAlignment="Center"
+                            <Border Style="{StaticResource Badge}" Margin="0,0,7,0" VerticalAlignment="Center"
                                     Visibility="{Binding RawBadgeVisibility}">
-                                <TextBlock Text="RAW" Foreground="White" FontSize="9" FontWeight="Bold"/>
+                                <TextBlock Text="RAW" Foreground="{StaticResource Wp.Label}" FontSize="9" FontWeight="Bold"/>
                             </Border>
-                            <Border Background="#CC2B5A8E" CornerRadius="4" Padding="5,1" Margin="0,0,7,0"
+                            <Border Background="{StaticResource Wp.Surface}" CornerRadius="4" Padding="5,1" Margin="0,0,7,0"
                                     VerticalAlignment="Center"
                                     Visibility="{Binding VideoBadgeVisibility}">
-                                <TextBlock Text="{DynamicResource L.VideoBadge}" Foreground="White"
+                                <TextBlock Text="{DynamicResource L.VideoBadge}" Foreground="{StaticResource Wp.SecondaryLabel}"
                                            FontSize="9" FontWeight="Bold"/>
                             </Border>
-                            <TextBlock Text="{Binding Name}" Foreground="{StaticResource MacLabel}"
+                            <TextBlock Text="{Binding Name}" Foreground="{StaticResource Wp.Label}"
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                     </DataTemplate>
@@ -229,8 +403,8 @@
 
             <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="Transparent"/>
 
-            <!-- 中間：影像（滾輪縮放、拖曳平移、雙擊還原）＋影片疊層控制列 -->
-            <Border x:Name="CenterBorder" Grid.Column="2" Background="{StaticResource MacPhotoBg}"
+            <!-- 中間：影像（滾輪縮放、拖曳平移、雙擊還原）＋影片疊層控制列。畫布用純黑，不影響看照片的色偏判斷 -->
+            <Border x:Name="CenterBorder" Grid.Column="2" Background="{StaticResource Wp.Canvas}"
                     CornerRadius="10" Margin="0,0,0,8">
                 <Grid x:Name="ZoomHost" ClipToBounds="True" Background="Transparent"
                       MouseWheel="ZoomHost_MouseWheel"
@@ -255,16 +429,59 @@
                               MouseLeftButtonDown="VideoOverlay_MouseDown"
                               PreviewKeyDown="Window_PreviewKeyDown">
                             <!-- 封面選集：疊在影片視窗上，影片視窗保持存在，點封面播放才不會卡。
+                                 一層一層瀏覽：上方是目前這一層的名稱與「上一層」，子資料夾排成海報牆，影片排成卡片。
                                  底色包在 Border 上（WPF-UI 的 ScrollViewer 樣板不畫 Background） -->
-                            <Border x:Name="EpisodePicker" Visibility="Collapsed" Background="#FF121214">
-                                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
-                                    <ItemsControl x:Name="EpisodeList"
-                                                  ItemTemplate="{StaticResource GalleryCardTemplate}"
-                                                  ItemsPanel="{StaticResource GalleryPanel}"/>
-                                </ScrollViewer>
+                            <Border x:Name="EpisodePicker" Visibility="Collapsed" Background="{StaticResource Wp.Backdrop}">
+                                <Grid>
+                                    <Rectangle Fill="{StaticResource Wp.Glow}" IsHitTestVisible="False"/>
+                                    <ScrollViewer x:Name="PickerScroll" VerticalScrollBarVisibility="Auto">
+                                        <StackPanel Margin="26,18,8,12">
+                                            <Grid Margin="0,0,18,20">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ui:Button x:Name="UpLevelBtn" Click="UpLevel_Click" Visibility="Collapsed"
+                                                           Appearance="Secondary" CornerRadius="8" Padding="8,5,12,5"
+                                                           Margin="0,0,14,0" MaxWidth="220" VerticalAlignment="Center"
+                                                           ToolTip="{DynamicResource L.UpOneLevel}">
+                                                    <ui:Button.Icon>
+                                                        <ui:SymbolIcon Symbol="ChevronLeft24"/>
+                                                    </ui:Button.Icon>
+                                                </ui:Button>
+                                                <TextBlock x:Name="PickerTitle" Grid.Column="1" Style="{StaticResource Wp.TitleText}"
+                                                           FontSize="24" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                            </Grid>
+                                            <ItemsControl x:Name="PosterList"
+                                                          ItemTemplate="{StaticResource PosterTemplate}"
+                                                          ItemsPanel="{StaticResource LeftWrapPanel}"/>
+                                            <ItemsControl x:Name="EpisodeList"
+                                                          ItemTemplate="{StaticResource EpisodeCardTemplate}"
+                                                          ItemsPanel="{StaticResource LeftWrapPanel}"/>
+                                            <!-- 影片數量放在卡片下方（讀取中時顯示「掃描資料夾中…」） -->
+                                            <TextBlock x:Name="PickerFooter" Foreground="{StaticResource Wp.SecondaryLabel}" FontSize="12"
+                                                       HorizontalAlignment="Center" Margin="0,4,18,8" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+                            <!-- 續播提示：「從 12:34 繼續播放」＋「從頭播放」，幾秒後自動消失 -->
+                            <Border x:Name="ResumeBanner" Visibility="Collapsed"
+                                    VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,20,0,0"
+                                    Background="{StaticResource Wp.OverlayPanel}" BorderBrush="{StaticResource Wp.Stroke}"
+                                    BorderThickness="1" CornerRadius="18" Padding="14,6,6,6">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="History24" FontSize="18" Foreground="{StaticResource Wp.Label}"
+                                                   VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="ResumeText" Foreground="{StaticResource Wp.Label}" FontSize="13"
+                                               FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,12,0"/>
+                                    <Button Style="{StaticResource Wp.PillButton}" Content="{DynamicResource L.StartOver}"
+                                            Click="StartOver_Click"/>
+                                </StackPanel>
                             </Border>
                             <Border x:Name="VideoControls" VerticalAlignment="Bottom"
-                                    Margin="18,0,18,14" Background="#E6141416"
+                                    Margin="18,0,18,14" Background="{StaticResource Wp.OverlayPanel}"
+                                    BorderBrush="{StaticResource Wp.Stroke}" BorderThickness="1"
                                     CornerRadius="10" Padding="12,8" Visibility="Collapsed">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -276,19 +493,20 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <ui:Button x:Name="PlayPauseBtn" Grid.Column="0" Appearance="Transparent"
-                                               Click="PlayPause_Click" Padding="6" CornerRadius="6">
+                                               Click="PlayPause_Click" Padding="6" CornerRadius="8">
                                         <ui:Button.Icon>
-                                            <ui:SymbolIcon x:Name="PlayPauseIcon" Symbol="Pause24" Foreground="White"/>
+                                            <ui:SymbolIcon x:Name="PlayPauseIcon" Symbol="Pause24" Filled="True"
+                                                           Foreground="{StaticResource Wp.Label}"/>
                                         </ui:Button.Icon>
                                     </ui:Button>
                                     <TextBlock x:Name="TimeCurrent" Grid.Column="1" Text="0:00:00"
-                                               Foreground="#CCCCCC" FontSize="12"
+                                               Foreground="{StaticResource Wp.SecondaryLabel}" FontSize="12"
                                                VerticalAlignment="Center" Margin="8,0"/>
                                     <Slider x:Name="PositionSlider" Grid.Column="2" VerticalAlignment="Center"
                                             Minimum="0" Maximum="1000" IsMoveToPointEnabled="True"
                                             ValueChanged="PositionSlider_ValueChanged"/>
                                     <TextBlock x:Name="TimeTotal" Grid.Column="3" Text="0:00:00"
-                                               Foreground="#CCCCCC" FontSize="12"
+                                               Foreground="{StaticResource Wp.SecondaryLabel}" FontSize="12"
                                                VerticalAlignment="Center" Margin="8,0"/>
                                     <ComboBox x:Name="SpeedSelect" Grid.Column="4" FontSize="12" MinWidth="80"
                                               Margin="4,0" SelectedIndex="2"
@@ -301,18 +519,19 @@
                                         <ComboBoxItem Content="2.0x"/>
                                     </ComboBox>
                                     <ui:Button Grid.Column="5" Appearance="Transparent" Click="Fullscreen_Click"
-                                               Padding="6" CornerRadius="6"
+                                               Padding="6" CornerRadius="8"
                                                ToolTip="{DynamicResource L.FullscreenTip}">
                                         <ui:Button.Icon>
-                                            <ui:SymbolIcon Symbol="FullScreenMaximize24" Foreground="White"/>
+                                            <ui:SymbolIcon Symbol="FullScreenMaximize24" Foreground="{StaticResource Wp.Label}"/>
                                         </ui:Button.Icon>
                                     </ui:Button>
                                 </Grid>
                             </Border>
                         </Grid>
                     </vlc:VideoView>
-                    <!-- 照片模式縮圖牆（看劇模式的選集在 VideoView 疊層內，因為影片視窗必須保持存在） -->
-                    <Border x:Name="PhotoGrid" Visibility="Collapsed" Background="#FF121214">
+                    <!-- 照片模式縮圖牆（看劇模式的選集在 VideoView 疊層內，因為影片視窗必須保持存在）。
+                         照片模式不開紅光，避免影響看照片的色偏判斷 -->
+                    <Border x:Name="PhotoGrid" Visibility="Collapsed" Background="{StaticResource Wp.Backdrop}">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
                             <ItemsControl x:Name="PhotoGridList"
                                           ItemTemplate="{StaticResource GalleryCardTemplate}"
@@ -322,14 +541,15 @@
                     <ui:ProgressRing x:Name="LoadingRing" IsIndeterminate="True" Width="44" Height="44"
                                      Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     <TextBlock x:Name="PlaceholderText" Text="{DynamicResource L.PlaceholderPhoto}"
-                               Foreground="#5A5A5E" FontSize="17"
+                               Foreground="{StaticResource Wp.TertiaryLabel}" FontSize="17" TextWrapping="Wrap"
+                               TextAlignment="Center" Margin="24"
                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Grid>
             </Border>
 
             <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch" Background="Transparent"/>
 
-            <!-- 右側：資訊面板（macOS 簡介風卡片） -->
+            <!-- 右側：資訊面板（霧面卡片） -->
             <ScrollViewer Grid.Column="4" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
                 <StackPanel>
                     <TextBlock Text="{DynamicResource L.ShootingInfo}" Style="{StaticResource CardTitle}" Margin="26,4,16,6"/>
@@ -346,44 +566,94 @@
         </Grid>
     </DockPanel>
 
-    <!-- 啟動模式選單（避開標題列，讓視窗仍可拖曳與關閉） -->
-    <Grid x:Name="ModeOverlay" Background="#FF0A0A0A" Margin="0,36,0,0">
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-            <TextBlock Text="wphoto" FontSize="36" FontWeight="Bold" Foreground="White"
-                       HorizontalAlignment="Center"/>
-            <TextBlock Text="{DynamicResource L.ChooseMode}" FontSize="14" Foreground="{StaticResource MacSecondaryLabel}"
-                       HorizontalAlignment="Center" Margin="0,8,0,32"/>
-            <StackPanel Orientation="Horizontal">
-                <ui:Button Click="PhotoMode_Click" Width="220" Height="180" Margin="0,0,24,0"
-                           Appearance="Secondary" CornerRadius="14" Cursor="Hand">
-                    <StackPanel>
-                        <TextBlock Text="🖼️" FontSize="52" HorizontalAlignment="Center"/>
-                        <TextBlock Text="{DynamicResource L.PhotoMode}" FontSize="17" FontWeight="SemiBold" Foreground="White"
-                                   HorizontalAlignment="Center" Margin="0,12,0,4"/>
-                        <TextBlock Text="{DynamicResource L.PhotoModeDesc}" FontSize="11"
-                                   Foreground="{StaticResource MacSecondaryLabel}" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                </ui:Button>
-                <ui:Button Click="VideoMode_Click" Width="220" Height="180"
-                           Appearance="Secondary" CornerRadius="14" Cursor="Hand">
-                    <StackPanel>
-                        <TextBlock Text="🎬" FontSize="52" HorizontalAlignment="Center"/>
-                        <TextBlock Text="{DynamicResource L.VideoMode}" FontSize="17" FontWeight="SemiBold" Foreground="White"
-                                   HorizontalAlignment="Center" Margin="0,12,0,4"/>
-                        <TextBlock Text="{DynamicResource L.VideoModeDesc}" FontSize="11"
-                                   Foreground="{StaticResource MacSecondaryLabel}" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                </ui:Button>
+    <!-- 首頁：選擇模式＋「繼續觀看」＋「最近位置」（避開標題列，讓視窗仍可拖曳與關閉）。
+         清單都是點了才開：啟動時不會連 NAS、不會讀任何網路磁碟 -->
+    <Grid x:Name="ModeOverlay" Background="{StaticResource Wp.Backdrop}" Margin="0,36,0,0">
+        <Rectangle Fill="{StaticResource Wp.Glow}" IsHitTestVisible="False"/>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel MaxWidth="760" Margin="28,36,28,28">
+                <TextBlock Text="wphoto" Style="{StaticResource Wp.TitleText}" FontSize="40"/>
+
+                <TextBlock Text="{DynamicResource L.ChooseMode}" Style="{StaticResource Wp.SectionTitle}" Margin="0,26,0,10"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <!-- 照片卡：深色卡片 -->
+                    <Button Grid.Column="0" Style="{StaticResource Wp.CardButton}" Height="176" Click="PhotoMode_Click">
+                        <Grid>
+                            <Border CornerRadius="14" Background="{StaticResource Wp.Card}" Effect="{StaticResource Wp.CardShadow}"/>
+                            <Border CornerRadius="14" BorderBrush="{StaticResource Wp.Stroke}" BorderThickness="1" Padding="20">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <ui:SymbolIcon Symbol="ImageMultiple24" Filled="True" FontSize="38"
+                                                   Foreground="{StaticResource Wp.Label}" HorizontalAlignment="Left"/>
+                                    <TextBlock Grid.Row="2" Text="{DynamicResource L.PhotoMode}" Style="{StaticResource Wp.TitleText}"
+                                               FontSize="19" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Row="3" Text="{DynamicResource L.PhotoModeDesc}" FontSize="12" Margin="0,5,0,0"
+                                               Foreground="{StaticResource Wp.SecondaryLabel}" TextWrapping="Wrap"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Button>
+                    <!-- 看劇卡：深紅絨布底，是首頁最重的一塊；照片卡維持深色，兩張才有主次 -->
+                    <Button Grid.Column="2" Style="{StaticResource Wp.CardButton}" Height="176" Click="VideoMode_Click">
+                        <Grid>
+                            <Border CornerRadius="14" Background="{StaticResource Wp.Velvet}" Effect="{StaticResource Wp.CardShadow}"/>
+                            <Border CornerRadius="14" BorderBrush="{StaticResource Wp.Stroke}" BorderThickness="1" Padding="20">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <ui:SymbolIcon Symbol="Filmstrip24" Filled="True" FontSize="38"
+                                                   Foreground="{StaticResource Wp.Label}" HorizontalAlignment="Left"/>
+                                    <TextBlock Grid.Row="2" Text="{DynamicResource L.VideoMode}" Style="{StaticResource Wp.TitleText}"
+                                               FontSize="19" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Row="3" Text="{DynamicResource L.VideoModeDesc}" FontSize="12" Margin="0,5,0,0"
+                                               Foreground="{StaticResource Wp.LabelOnVelvet}" TextWrapping="Wrap"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Button>
+                </Grid>
+
+                <!-- 兩份清單都是空的才教怎麼開資料夾：已經有清單，使用者早就會了 -->
+                <TextBlock x:Name="HomeHint" Text="{DynamicResource L.HomeHint}" FontSize="12" Margin="0,18,0,0"
+                           Foreground="{StaticResource Wp.SecondaryLabel}" TextWrapping="Wrap"/>
+
+                <StackPanel x:Name="ContinueSection" Visibility="Collapsed" Margin="0,28,0,0">
+                    <TextBlock Text="{DynamicResource L.ContinueWatching}" Style="{StaticResource Wp.SectionTitle}" Margin="0,0,0,10"/>
+                    <ItemsControl x:Name="ContinueList" ItemTemplate="{StaticResource ContinueRowTemplate}"/>
+                </StackPanel>
+
+                <StackPanel x:Name="RecentSection" Visibility="Collapsed" Margin="0,18,0,0">
+                    <TextBlock Text="{DynamicResource L.RecentLocations}" Style="{StaticResource Wp.SectionTitle}" Margin="0,0,0,10"/>
+                    <Border Background="{StaticResource Wp.Card}" BorderBrush="{StaticResource Wp.Stroke}" BorderThickness="1"
+                            CornerRadius="10" Padding="0,2">
+                        <ItemsControl x:Name="RecentList" ItemTemplate="{StaticResource RecentRowTemplate}"/>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,32,0,0">
+                    <ui:Button Content="繁體中文" Tag="zh-Hant" Click="OverlayLang_Click"
+                               Appearance="Transparent" FontSize="12" Padding="10,4" Margin="4,0"/>
+                    <ui:Button Content="简体中文" Tag="zh-Hans" Click="OverlayLang_Click"
+                               Appearance="Transparent" FontSize="12" Padding="10,4" Margin="4,0"/>
+                    <ui:Button Content="English" Tag="en" Click="OverlayLang_Click"
+                               Appearance="Transparent" FontSize="12" Padding="10,4" Margin="4,0"/>
+                </StackPanel>
             </StackPanel>
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,30,0,0">
-                <ui:Button Content="繁體中文" Tag="zh-Hant" Click="OverlayLang_Click"
-                           Appearance="Transparent" FontSize="12" Padding="10,4" Margin="4,0"/>
-                <ui:Button Content="简体中文" Tag="zh-Hans" Click="OverlayLang_Click"
-                           Appearance="Transparent" FontSize="12" Padding="10,4" Margin="4,0"/>
-                <ui:Button Content="English" Tag="en" Click="OverlayLang_Click"
-                           Appearance="Transparent" FontSize="12" Padding="10,4" Margin="4,0"/>
-            </StackPanel>
-        </StackPanel>
+        </ScrollViewer>
     </Grid>
     </Grid>
 </ui:FluentWindow>

@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
 using LibVLCSharp.Shared;
 using Microsoft.Win32;
 
@@ -30,17 +32,104 @@ public class EpisodeItem : System.ComponentModel.INotifyPropertyChanged
     public required string Name { get; init; }
     public bool IsRaw => ImageLoader.IsRaw(Path);
     public bool IsVideo => ImageLoader.IsVideo(Path);
-    public string Glyph => IsVideo ? "🎬" : "🖼️";
     public Visibility RawBadgeVisibility => IsRaw ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>影片卡片的標題不帶副檔名；格式改放到第二行</summary>
+    public string Title => System.IO.Path.GetFileNameWithoutExtension(Name);
+
+    /// <summary>第二行「MKV · 1:30:00」：看過的影片才知道時長，沒看過只顯示格式</summary>
+    public string Subtitle
+    {
+        get
+        {
+            string ext = System.IO.Path.GetExtension(Path).TrimStart('.').ToUpperInvariant();
+            return _watch is { DurationMs: > 0 } w ? $"{ext} · {MainWindow.FmtShort(w.DurationMs)}" : ext;
+        }
+    }
 
     System.Windows.Media.Imaging.BitmapSource? _thumb;
     public System.Windows.Media.Imaging.BitmapSource? Thumb
     {
         get => _thumb;
-        set { _thumb = value; PropertyChanged?.Invoke(this, new(nameof(Thumb))); }
+        set { _thumb = value; Raise(nameof(Thumb)); Raise(nameof(ThumbVisibility)); }
     }
 
+    /// <summary>有畫面才壓暗底部（進度條疊在亮畫面上也看得清）</summary>
+    public Visibility ThumbVisibility => _thumb != null ? Visibility.Visible : Visibility.Collapsed;
+
+    // ---------- 看到哪裡（看劇模式） ----------
+    WatchEntry? _watch;
+
+    /// <summary>重新讀播放進度（回到選集畫面時更新進度條與打勾）</summary>
+    public void RefreshWatch()
+    {
+        _watch = WatchProgress.Get(Path);
+        Raise(nameof(Subtitle));
+        Raise(nameof(ProgressVisibility));
+        Raise(nameof(ProgressDone));
+        Raise(nameof(ProgressRest));
+        Raise(nameof(WatchedVisibility));
+    }
+
+    public Visibility ProgressVisibility => _watch?.IsResumable == true ? Visibility.Visible : Visibility.Collapsed;
+    public GridLength ProgressDone => new(_watch?.Fraction ?? 0, GridUnitType.Star);
+    public GridLength ProgressRest => new(1 - (_watch?.Fraction ?? 0), GridUnitType.Star);
+    public Visibility WatchedVisibility => _watch?.Watched == true ? Visibility.Visible : Visibility.Collapsed;
+
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    void Raise(string name) => PropertyChanged?.Invoke(this, new(name));
+}
+
+/// <summary>首頁「繼續觀看」的一列</summary>
+public class ContinueRowItem
+{
+    public required WatchEntry Entry { get; init; }
+    public string Title => Entry.FileName;
+    /// <summary>「位置 › 子資料夾 · 12:34 / 45:00」</summary>
+    public string Detail
+    {
+        get
+        {
+            string time = MainWindow.FmtShort(Entry.PositionMs);
+            if (Entry.DurationMs > 0)
+                time += " / " + MainWindow.FmtShort(Entry.DurationMs);
+            if (Entry.LocationPath == null)
+                return time;
+            var parts = new List<string> { TheaterLibrary.DisplayName(Entry.LocationPath) };
+            if (Entry.Subfolders != null)
+                parts.AddRange(Entry.Subfolders);
+            return $"{string.Join(" › ", parts)} · {time}";
+        }
+    }
+    public GridLength ProgressDone => new(Entry.Fraction, GridUnitType.Star);
+    public GridLength ProgressRest => new(1 - Entry.Fraction, GridUnitType.Star);
+}
+
+/// <summary>首頁「最近位置」的一列</summary>
+public class RecentRowItem
+{
+    public required RecentLocation Location { get; init; }
+    public bool IsFirst { get; init; }
+    public string Name => TheaterLibrary.DisplayName(Location.Path);
+    public Wpf.Ui.Controls.SymbolRegular Symbol => Location.Mode == MainWindow.AppMode.Photo
+        ? Wpf.Ui.Controls.SymbolRegular.ImageMultiple24
+        : Wpf.Ui.Controls.SymbolRegular.Filmstrip24;
+    public Visibility SeparatorVisibility => IsFirst ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>「上一層資料夾 · 3 天前」：兩個同名的資料夾靠上一層分辨；在磁碟根目錄（沒有上一層）時退回「看劇模式 · 3 天前」。
+    /// 只做字串運算，不會去讀資料夾（NAS 沒連線也不會卡）</summary>
+    public string Detail
+    {
+        get
+        {
+            string when = Loc.RelativeTime(Location.LastOpened);
+            string? parentDir = System.IO.Path.GetDirectoryName(Location.Path);
+            string parent = parentDir == null ? "" : System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(parentDir));
+            if (string.IsNullOrEmpty(parent))
+                parent = Loc.T(Location.Mode == MainWindow.AppMode.Photo ? "PhotoMode" : "VideoMode");
+            return $"{parent} · {when}";
+        }
+    }
 }
 
 public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
@@ -61,12 +150,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     bool _suppressLangEvent;
 
+    /// <summary>首頁最多列幾筆</summary>
+    const int MaxContinueRows = 5;
+    const int MaxRecentRows = 6;
+
     public MainWindow()
     {
         InitializeComponent();
         FileList.ItemsSource = _files;
         EpisodeList.ItemsSource = _episodes;
         PhotoGridList.ItemsSource = _episodes;
+        PosterList.ItemsSource = _posters;
 
         // 語言選單反映目前語言（Loc.Init 已在 App 啟動時執行）
         _suppressLangEvent = true;
@@ -80,6 +174,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && System.IO.Directory.Exists(args[1]))
             _pendingFolder = args[1]; // 等使用者選完模式再開
+
+        RefreshHome(); // 只讀本機的 JSON，不會去開任何資料夾
     }
 
     void LangSelect_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -95,9 +191,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             EpisodesBtn.Content = Loc.T(_mode == AppMode.Photo ? "Gallery" : "Episodes");
             if (MainImage.Source == null && !VideoActive)
                 PlaceholderText.Text = Loc.T(_mode == AppMode.Photo ? "PlaceholderPhoto" : "PlaceholderVideo");
+            if (GalleryHost.Visibility == Visibility.Visible)
+                UpdatePickerStatus();
         }
-        if (_allPaths.Count == 0)
+        if (_allPaths.Count == 0 && _theaterStack.Count == 0)
             FolderLabel.Text = Loc.T("NoFolderHint");
+        RefreshHome(); // 「3 天前」等相對時間由程式碼組字
 
         // 類型下拉選單的「全部」項目換語言重建（保留目前選擇位置）
         if (TypeFilter.ItemsSource is List<string> old && old.Count > 0)
@@ -146,8 +245,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _loadToken++;
         _scanToken++;
         _thumbToken++;
+        _posterToken++;
         StopVideo();
         _episodes.Clear();
+        _posters.Clear();
+        _theaterStack.Clear();
+        _listings.Clear();
+        _posterCache.Clear();
         HideGallery();
         EpisodesBtn.Visibility = Visibility.Collapsed;
         _files.Clear();
@@ -159,7 +263,65 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         ClearInfo();
         FolderLabel.Text = Loc.T("NoFolderHint");
         StatusLabel.Text = "";
+        RefreshHome(); // 剛看過的影片出現在「繼續觀看」
         ModeOverlay.Visibility = Visibility.Visible;
+    }
+
+    // ---------- 首頁：繼續觀看、最近位置 ----------
+
+    /// <summary>重建首頁的兩份清單。只讀本機的 JSON，不檢查路徑還在不在（避免啟動時連 NAS）</summary>
+    void RefreshHome()
+    {
+        var cont = WatchProgress.ContinueWatching.Take(MaxContinueRows)
+            .Select(entry => new ContinueRowItem { Entry = entry }).ToList();
+        ContinueList.ItemsSource = cont;
+        ContinueSection.Visibility = cont.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        var recents = RecentLocations.All.Take(MaxRecentRows)
+            .Select((r, i) => new RecentRowItem { Location = r, IsFirst = i == 0 }).ToList();
+        RecentList.ItemsSource = recents;
+        RecentSection.Visibility = recents.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        HomeHint.Visibility = cont.Count == 0 && recents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>「繼續觀看」：開回影片所在的位置、進到那一層，從上次的位置繼續播</summary>
+    void Continue_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not ContinueRowItem row)
+            return;
+        var entry = row.Entry;
+        _pendingFolder = null; // 使用者點了這一筆：命令列帶進來的資料夾不再自動開
+        StartMode(AppMode.Video);
+        string root = entry.LocationPath ?? System.IO.Path.GetDirectoryName(entry.Path) ?? entry.Path;
+        var subfolders = entry.LocationPath != null && entry.Subfolders != null ? entry.Subfolders : new List<string>();
+        OpenTheaterLocation(root, subfolders, playPath: entry.Path);
+    }
+
+    /// <summary>「最近位置」：用當時的模式開那個資料夾</summary>
+    void Recent_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not RecentRowItem row)
+            return;
+        _pendingFolder = null;
+        StartMode(row.Location.Mode);
+        OpenFolder(row.Location.Path);
+    }
+
+    void RemoveContinue_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not ContinueRowItem row)
+            return;
+        WatchProgress.RemoveFromContinueWatching(row.Entry.Path);
+        RefreshHome();
+    }
+
+    void RemoveRecent_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not RecentRowItem row)
+            return;
+        RecentLocations.Remove(row.Location.Path, row.Location.Mode);
+        RefreshHome();
     }
 
     Task<bool>? _vlcInitTask;
@@ -196,6 +358,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     void StopVideo()
     {
+        RecordProgress(); // 停止前記下看到哪裡
+        _playingPath = null;
+        HideResumeBanner();
         _spuTimer?.Stop();
         _progressTimer?.Stop();
         _hideControlsTimer?.Stop();
@@ -217,6 +382,55 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         SubtitleLabel.Visibility = Visibility.Collapsed;
         SubtitleSelect.Visibility = Visibility.Collapsed;
         SubtitleSelect.ItemsSource = null;
+    }
+
+    // ---------- 播放進度（繼續觀看） ----------
+    /// <summary>正在播的影片與它是從哪個位置、哪幾層子資料夾開的</summary>
+    string? _playingPath;
+    string? _playingRoot;
+    List<string>? _playingSubfolders;
+    /// <summary>進度計時器最後一次讀到的有效位置（-1 = 還沒開始播）。停止時記這個值，不在停止的瞬間重讀</summary>
+    long _lastTimeMs = -1;
+    long _lastLengthMs;
+    int _recordTicks;
+    bool _endRecorded;
+
+    /// <summary>把目前看到的位置交給 WatchProgress（看不到 30 秒的由它決定不記）</summary>
+    void RecordProgress()
+    {
+        if (_playingPath == null || _lastTimeMs <= 0)
+            return;
+        WatchProgress.Record(_playingPath, _lastTimeMs, _lastLengthMs, _playingRoot, _playingSubfolders);
+    }
+
+    System.Windows.Threading.DispatcherTimer? _resumeBannerTimer;
+
+    void ShowResumeBanner(long positionMs)
+    {
+        ResumeText.Text = string.Format(Loc.T("ResumedFrom"), FmtShort(positionMs));
+        ResumeBanner.Visibility = Visibility.Visible;
+        if (_resumeBannerTimer == null)
+        {
+            _resumeBannerTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+            _resumeBannerTimer.Tick += (_, _) => HideResumeBanner();
+        }
+        _resumeBannerTimer.Stop();
+        _resumeBannerTimer.Start();
+    }
+
+    void HideResumeBanner()
+    {
+        _resumeBannerTimer?.Stop();
+        ResumeBanner.Visibility = Visibility.Collapsed;
+    }
+
+    void StartOver_Click(object sender, RoutedEventArgs e)
+    {
+        HideResumeBanner();
+        if (!VideoActive) return;
+        _player!.Time = 0;
+        _lastTimeMs = -1; // 舊的續播位置不要再寫回去
+        Keyboard.Focus(VideoOverlay);
     }
 
     // ---------- 字幕 ----------
@@ -363,6 +577,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     static string FmtTime(long ms) => TimeSpan.FromMilliseconds(Math.Max(0, ms)).ToString(@"h\:mm\:ss");
 
+    /// <summary>「12:34」或「1:02:03」（續播提示、首頁、影片卡片用；與 iOS 版相同）</summary>
+    public static string FmtShort(long ms)
+    {
+        var t = TimeSpan.FromMilliseconds(Math.Max(0, ms));
+        return t.TotalHours >= 1 ? t.ToString(@"h\:mm\:ss") : t.ToString(@"m\:ss");
+    }
+
     void StartProgressTimer()
     {
         _progressTimer ??= CreateProgressTimer();
@@ -378,14 +599,32 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             PlayPauseIcon.Symbol = _player!.IsPlaying
                 ? Wpf.Ui.Controls.SymbolRegular.Pause24
                 : Wpf.Ui.Controls.SymbolRegular.Play24;
+            var state = _player.State;
+            // 播到最後：記成看完（之後的停止不再覆寫）
+            if (state == VLCState.Ended && _playingPath != null && !_endRecorded && _lastLengthMs > 0)
+            {
+                _endRecorded = true;
+                _lastTimeMs = _lastLengthMs;
+                RecordProgress();
+                _lastTimeMs = -1;
+            }
             long len = _player.Length;
             if (len <= 0) return;
+            long time = _player.Time;
+            if (_playingPath != null && time > 0 && (state == VLCState.Playing || state == VLCState.Paused))
+            {
+                _lastTimeMs = time;
+                _lastLengthMs = len;
+                // 看到哪裡：每 5 秒記一次，停止或換片時再記一次
+                if (++_recordTicks % 10 == 0)
+                    RecordProgress();
+            }
             _updatingSliderFromTimer = true;
             PositionSlider.Maximum = len;
             if (!PositionSlider.IsMouseCaptureWithin)
-                PositionSlider.Value = _player.Time;
+                PositionSlider.Value = time;
             _updatingSliderFromTimer = false;
-            TimeCurrent.Text = FmtTime(_player.Time);
+            TimeCurrent.Text = FmtTime(time);
             TimeTotal.Text = FmtTime(len);
         };
         return t;
@@ -512,7 +751,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _fullscreen = false;
 
             _hideControlsTimer?.Stop();
-            if (VideoActive)
+            if (VideoActive && EpisodePicker.Visibility != Visibility.Visible)
                 VideoControls.Visibility = Visibility.Visible; // 視窗模式恆顯示
             VideoOverlay.Cursor = null;
         }
@@ -523,6 +762,14 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (SubtitleSelect.IsDropDownOpen || SpeedSelect.IsDropDownOpen)
             return;
 
+        // 看劇模式的選集畫面：Backspace 或 Alt+↑ 回上一層（與檔案總管相同）
+        if (_mode == AppMode.Video && EpisodePicker.Visibility == Visibility.Visible && _theaterStack.Count > 1 &&
+            (e.Key == Key.Back || (e.Key == Key.System && e.SystemKey == Key.Up)))
+        {
+            GoUpLevel();
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.F11 && VideoActive)
         {
             ToggleFullscreen();
@@ -560,7 +807,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     protected override void OnClosed(EventArgs e)
     {
-        StopVideo();
+        StopVideo(); // 會記下看到哪裡
+        WatchProgress.Flush();
         _player?.Dispose();
         _libVLC?.Dispose();
         base.OnClosed(e);
@@ -602,6 +850,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             return;
         }
 
+        // 看劇模式一層一層瀏覽，子資料夾顯示成海報牆
+        if (_mode == AppMode.Video)
+        {
+            OpenTheaterLocation(folder, new List<string>(), selectFile);
+            return;
+        }
+
         int scanToken = ++_scanToken;
         AppMode mode = _mode;
         FolderLabel.Text = folder;
@@ -610,6 +865,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         var paths = await Task.Run(() =>
         {
+            // 資料夾不在了（NAS 沒連線、隨身碟拔掉）：回報無法開啟，不顯示成「沒有照片」
+            if (!System.IO.Directory.Exists(folder))
+                return null;
             var result = new List<string>();
             ScanFolder(folder, result, mode);
             result.Sort(StringComparer.OrdinalIgnoreCase);
@@ -618,16 +876,19 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         if (scanToken != _scanToken) return; // 已改開別的資料夾
 
+        if (paths == null)
+        {
+            _allPaths = new List<string>();
+            TypeFilter.ItemsSource = null;
+            ShowEmpty(Loc.T("CannotOpenLocation"));
+            StatusLabel.Text = Loc.T("CannotOpenLocation");
+            return;
+        }
+        RecentLocations.Remember(folder, AppMode.Photo);
+
         _allPaths = paths;
         _rootFolder = folder;
-
-        // 類型下拉選單：只列出資料夾裡實際存在的類型
-        var types = paths.Select(TypeLabel).Distinct().OrderBy(t => t, StringComparer.Ordinal).ToList();
-        _suppressFilterEvent = true;
-        TypeFilter.ItemsSource = types.Count > 0 ? new[] { FilterAll }.Concat(types).ToList() : new List<string>();
-        TypeFilter.SelectedIndex = types.Count > 0 ? 0 : -1;
-        _suppressFilterEvent = false;
-
+        RebuildTypeFilter();
         ApplyFilter(selectFile);
     }
 
@@ -636,6 +897,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     bool _suppressFilterEvent;
 
     static string FilterAll => Loc.T("AllTypes");
+
+    /// <summary>類型下拉選單：只列出資料夾裡實際存在的類型</summary>
+    void RebuildTypeFilter()
+    {
+        var types = _allPaths.Select(TypeLabel).Distinct().OrderBy(t => t, StringComparer.Ordinal).ToList();
+        _suppressFilterEvent = true;
+        TypeFilter.ItemsSource = types.Count > 0 ? new[] { FilterAll }.Concat(types).ToList() : new List<string>();
+        TypeFilter.SelectedIndex = types.Count > 0 ? 0 : -1;
+        _suppressFilterEvent = false;
+    }
 
     /// <summary>副檔名 → 類型名稱（JPG/JPEG 等同義副檔名合併顯示）</summary>
     static string TypeLabel(string path)
@@ -668,49 +939,261 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             if (filter == null || TypeLabel(p) == filter)
                 _files.Add(new FileItem { Path = p, Root = _rootFolder });
 
-        StatusLabel.Text = _mode == AppMode.Photo
+        bool video = _mode == AppMode.Video;
+        StatusLabel.Text = !video
             ? string.Format(Loc.T("PhotoCount"), _files.Count, _files.Count(f => f.IsRaw))
             : string.Format(Loc.T("VideoCount"), _files.Count);
 
-        if (_files.Count > 0)
+        // 看劇模式：這一層沒有影片也顯示選集畫面（可能只有子資料夾；空的也要有「上一層」可以按）
+        if (_files.Count > 0 || video)
         {
             EpisodesBtn.Visibility = Visibility.Visible;
 
-            if (selectFile == null)
+            FileItem? target = null;
+            if (selectFile != null)
+            {
+                target = _files.FirstOrDefault(f => string.Equals(f.Path, selectFile, StringComparison.OrdinalIgnoreCase));
+                // 照片模式拖進來的檔案被篩選掉了：照舊從第一張開始；看劇模式（繼續觀看）找不到就不亂播別部
+                if (target == null && !video)
+                    target = _files[0];
+            }
+
+            if (target == null)
             {
                 // 先顯示縮圖牆（照片）／封面選集（影片），讓使用者挑
                 PopulateEpisodes();
                 ShowEpisodePicker();
+                // 「繼續觀看」要播的影片不在這一層了（改名、搬走）
+                if (video && selectFile != null && ImageLoader.IsVideo(selectFile))
+                    StatusLabel.Text = Loc.T("ContinueVideoMissing");
                 return;
             }
+            // 看劇模式直接播：選集先備好（按「選集」就是這一層），但縮圖等回到選集畫面才讀，磁碟讓給播放
+            if (video)
+                PopulateEpisodes(loadThumbs: false);
 
-            var target = selectFile != null
-                ? _files.FirstOrDefault(f => string.Equals(f.Path, selectFile, StringComparison.OrdinalIgnoreCase)) ?? _files[0]
-                : _files[0];
             FileList.SelectedItem = target;
             FileList.ScrollIntoView(target);
             FileList.Focus();
         }
         else
         {
-            EpisodesBtn.Visibility = Visibility.Collapsed;
-            HideGallery();
-            StopVideo();
-            MainImage.Source = null;
-            MainImage.Visibility = Visibility.Visible;
-            PlaceholderText.Visibility = Visibility.Visible;
-            PlaceholderText.Text = Loc.T(_mode == AppMode.Photo ? "NoPhotos" : "NoVideos");
-            ClearInfo();
+            ShowEmpty(Loc.T("NoPhotos"));
         }
     }
 
+    /// <summary>沒有可顯示的內容：中間顯示一行說明</summary>
+    void ShowEmpty(string message)
+    {
+        EpisodesBtn.Visibility = Visibility.Collapsed;
+        HideGallery();
+        StopVideo();
+        MainImage.Source = null;
+        MainImage.Visibility = Visibility.Visible;
+        PlaceholderText.Visibility = Visibility.Visible;
+        PlaceholderText.Text = message;
+        ClearInfo();
+    }
+
+    // ---------- 看劇模式：一層一層瀏覽、海報牆 ----------
+    /// <summary>從開啟的位置一路點進去的資料夾：第一個是位置本身，最後一個是目前這一層</summary>
+    readonly List<string> _theaterStack = new();
+    /// <summary>讀過的每一層都記著：回上一層不必再讀 NAS（換位置時清空）</summary>
+    readonly Dictionary<string, FolderListing> _listings = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>找過的海報（null = 沒有封面），以資料夾為 key</summary>
+    readonly Dictionary<string, BitmapSource?> _posterCache = new(StringComparer.OrdinalIgnoreCase);
+    readonly ObservableCollection<PosterItem> _posters = new();
+    int _posterToken;
+    /// <summary>每次換位置 +1：較晚回來的舊位置結果不寫進快取</summary>
+    int _locationGen;
+
+    /// <summary>海報解碼尺寸：顯示 150×225，留給 200% 縮放的螢幕</summary>
+    const int PosterDecodeWidth = 300, PosterDecodeHeight = 450;
+
+    /// <summary>開啟一個位置；subfolders 不是空的時直接進到那一層（首頁「繼續觀看」）。playPath：那一層讀好後要播的影片</summary>
+    void OpenTheaterLocation(string root, IReadOnlyList<string> subfolders, string? playPath = null)
+    {
+        _locationGen++;
+        _listings.Clear();
+        _posterCache.Clear();
+        _theaterStack.Clear();
+        _theaterStack.Add(root);
+        foreach (var name in subfolders)
+            _theaterStack.Add(System.IO.Path.Combine(_theaterStack[^1], name));
+        LoadTheaterLevel(playPath, rememberRoot: true);
+    }
+
+    /// <summary>讀目前這一層（讀過的直接顯示）。rememberRoot：讀得到才記進「最近位置」</summary>
+    async void LoadTheaterLevel(string? playPath = null, bool rememberRoot = false)
+    {
+        int scanToken = ++_scanToken;
+        _posterToken++;
+        _thumbToken++;
+        string dir = _theaterStack[^1];
+        FolderLabel.Text = dir;
+        UpdatePickerHeader();
+
+        if (!_listings.TryGetValue(dir, out var listing))
+        {
+            // 讀取中：先清空並顯示「掃描資料夾中…」，避免標題已經換了、畫面還是上一層
+            _posters.Clear();
+            _episodes.Clear();
+            _files.Clear();
+            StatusLabel.Text = Loc.T("Scanning");
+            PickerFooter.Text = Loc.T("Scanning");
+            int gen = _locationGen;
+            listing = await Task.Run(() => TheaterLibrary.List(dir));
+            if (scanToken != _scanToken) return; // 已改開別的資料夾或回上一層
+            if (listing == null)
+            {
+                // 「繼續觀看」直接進到深層：上面幾層沒讀過，不一層層往上試（NAS 斷線時每層都要等逾時）
+                if (_theaterStack.Count > 1 && playPath == null)
+                {
+                    // 子資料夾讀不到（NAS 斷線等）：留在上一層（上一層讀過，直接顯示）
+                    _theaterStack.RemoveAt(_theaterStack.Count - 1);
+                    LoadTheaterLevel();
+                }
+                else
+                {
+                    _allPaths = new List<string>();
+                    TypeFilter.ItemsSource = null;
+                    _posters.Clear();
+                    ShowEmpty(Loc.T("CannotOpenLocation"));
+                }
+                StatusLabel.Text = Loc.T("CannotOpenLocation");
+                return;
+            }
+            if (gen == _locationGen)
+                _listings[dir] = listing;
+        }
+
+        if (rememberRoot)
+            RecentLocations.Remember(_theaterStack[0], AppMode.Video);
+
+        _rootFolder = dir;
+        _allPaths = listing.Videos.ToList();
+        _posters.Clear();
+        foreach (var folder in listing.Folders)
+            _posters.Add(new PosterItem(folder));
+        PickerScroll.ScrollToTop();
+        RebuildTypeFilter();
+        ApplyFilter(playPath);
+    }
+
+    void UpdatePickerHeader()
+    {
+        if (_theaterStack.Count == 0)
+            return;
+        PickerTitle.Text = TheaterLibrary.DisplayName(_theaterStack[^1]);
+        bool canGoUp = _theaterStack.Count > 1;
+        UpLevelBtn.Visibility = canGoUp ? Visibility.Visible : Visibility.Collapsed;
+        // 返回鍵顯示上一層的名稱（與 iOS 版相同）
+        UpLevelBtn.Content = canGoUp ? TheaterLibrary.DisplayName(_theaterStack[^2]) : null;
+    }
+
+    /// <summary>選集畫面的狀態列與底部文字（影片數量）</summary>
+    void UpdatePickerStatus()
+    {
+        if (_mode != AppMode.Video)
+        {
+            StatusLabel.Text = string.Format(Loc.T("PickPhoto"), _files.Count);
+            return;
+        }
+        StatusLabel.Text = _posters.Count > 0
+            ? string.Format(Loc.T("PickTitle"), _posters.Count, _files.Count)
+            : string.Format(Loc.T(_files.Count > 0 ? "PickEpisode" : "NoVideos"), _files.Count);
+        PickerFooter.Text = _files.Count > 0
+            ? string.Format(Loc.T("VideoCount"), _files.Count)
+            : (_posters.Count == 0 ? Loc.T("NoVideos") : "");
+    }
+
+    void Poster_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not PosterItem poster)
+            return;
+        _theaterStack.Add(poster.Path);
+        LoadTheaterLevel();
+    }
+
+    void UpLevel_Click(object sender, RoutedEventArgs e) => GoUpLevel();
+
+    void GoUpLevel()
+    {
+        if (_theaterStack.Count <= 1)
+            return;
+        _theaterStack.RemoveAt(_theaterStack.Count - 1);
+        LoadTheaterLevel();
+    }
+
+    /// <summary>
+    /// 背景找海報：讀子資料夾那一層找 poster／folder／cover／fanart，都沒有就用首字佔位。
+    /// 同時最多讀 4 個資料夾（NAS 一次湧入太多請求反而更慢）；讀到的內容順便存進快取，點進去直接顯示
+    /// </summary>
+    void LoadPostersAsync()
+    {
+        int token = ++_posterToken;
+        int gen = _locationGen;
+        foreach (var p in _posters)
+            if (!p.Finished && _posterCache.TryGetValue(p.Path, out var cached))
+            {
+                p.Image = cached;
+                p.Finished = true;
+            }
+        // 在 UI 執行緒先抓好已讀過的那幾層（Dictionary 不能跨執行緒讀）
+        var pending = _posters.Where(p => !p.Finished)
+            .Select(p => (Item: p, Listing: _listings.TryGetValue(p.Path, out var l) ? l : null))
+            .ToList();
+        if (pending.Count == 0)
+            return;
+
+        Task.Run(async () =>
+        {
+            using var gate = new System.Threading.SemaphoreSlim(4);
+            var tasks = pending.Select(async job =>
+            {
+                await gate.WaitAsync();
+                try
+                {
+                    if (token != _posterToken) return; // 已離開這一層
+                    var listing = job.Listing ?? TheaterLibrary.List(job.Item.Path);
+                    string? cover = listing == null ? null : TheaterLibrary.FindCover(listing);
+                    BitmapSource? bmp = null;
+                    if (cover != null)
+                    {
+                        try { bmp = ImageLoader.LoadCover(cover, PosterDecodeWidth, PosterDecodeHeight); }
+                        catch { } // 圖壞了就用佔位
+                    }
+                    await Dispatcher.BeginInvoke(() =>
+                    {
+                        if (gen != _locationGen) return;
+                        if (listing != null && !_listings.ContainsKey(job.Item.Path))
+                            _listings[job.Item.Path] = listing;
+                        // 讀不到資料夾（null listing）不寫快取：下次回到這一層再試
+                        if (listing != null)
+                            _posterCache[job.Item.Path] = bmp;
+                        job.Item.Image = bmp;
+                        job.Item.Finished = true;
+                    });
+                }
+                finally { gate.Release(); }
+            }).ToList();
+            await Task.WhenAll(tasks);
+        });
+    }
+
     // ---------- 看劇模式：封面選集 ----------
-    void PopulateEpisodes()
+    void PopulateEpisodes(bool loadThumbs = true)
     {
         _episodes.Clear();
         foreach (var f in _files)
-            _episodes.Add(new EpisodeItem { Path = f.Path, Name = f.Name });
-        LoadThumbsAsync();
+        {
+            var ep = new EpisodeItem { Path = f.Path, Name = f.Name };
+            if (_mode == AppMode.Video)
+                ep.RefreshWatch();
+            _episodes.Add(ep);
+        }
+        if (loadThumbs)
+            LoadThumbsAsync();
     }
 
     /// <summary>背景載入缺少的封面縮圖。先撈系統快取（瞬間），沒有的才現場產生（吃磁碟、可取消）</summary>
@@ -799,10 +1282,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             // 影片視窗保持存在（選集畫面疊在上面）——之後點封面播放不用重建視窗，才不會卡
             VideoViewControl.Visibility = Visibility.Visible;
+            // 剛看完回來：進度條與打勾更新
+            foreach (var ep in _episodes)
+                ep.RefreshWatch();
+            UpdatePickerHeader();
+            LoadPostersAsync(); // 續找還沒找完的海報
         }
         GalleryHost.Visibility = Visibility.Visible;
         ClearInfo();
-        StatusLabel.Text = string.Format(Loc.T(_mode == AppMode.Photo ? "PickPhoto" : "PickEpisode"), _files.Count);
+        UpdatePickerStatus();
         LoadThumbsAsync(); // 續載還沒好的縮圖
     }
 
@@ -888,6 +1376,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     async Task ShowVideoAsync(FileItem item, int token)
     {
+        // 換片：先記下上一部看到哪裡；新的一部真正開播前不記錄
+        RecordProgress();
+        _playingPath = null;
+        HideResumeBanner();
+
         if (!await EnsurePlayerAsync() || token != _loadToken)
             return;
         if (_libVLC == null || _player == null)
@@ -897,6 +1390,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
 
         _thumbToken++; // 取消封面縮圖產生，磁碟頻寬讓給播放
+        _posterToken++;
         _spuTimer?.Stop();
         var oldMedia = _currentMedia;
         _currentMedia = null;
@@ -916,6 +1410,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         foreach (var sub in subFiles)
             media.AddSlave(MediaSlaveType.Subtitle, 4, new Uri(sub).AbsoluteUri);
 
+        // 上次看到一半（30 秒以上、還沒到最後 5%）：從那裡開檔（與 iOS 版 VLC 相同，用 :start-time）
+        long? resumeMs = WatchProgress.ResumePositionMs(item.Path);
+        if (resumeMs is long ms)
+            media.AddOption(":start-time=" + (ms / 1000.0).ToString("F1", CultureInfo.InvariantCulture));
+
         ResetZoom();
         MainImage.Source = null;
         MainImage.Visibility = Visibility.Collapsed;
@@ -934,7 +1433,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // 先開播（切集立即有反應），影片資訊在背景解析完再補進右側面板
         _currentMedia = media;
         _player.Play(media);
+        _playingPath = item.Path;
+        _playingRoot = _theaterStack.Count > 0 ? _theaterStack[0] : System.IO.Path.GetDirectoryName(item.Path);
+        _playingSubfolders = _theaterStack.Skip(1).Select(d => System.IO.Path.GetFileName(d)).ToList();
+        _lastTimeMs = -1;
+        _lastLengthMs = 0;
+        _recordTicks = 0;
+        _endRecorded = false;
         StartProgressTimer();
+        if (resumeMs is long shown)
+            ShowResumeBanner(shown);
         FillInfo(item.Path, 0, 0, new List<InfoRow>());
 
         _ = Task.Run(async () =>

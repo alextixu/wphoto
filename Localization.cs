@@ -72,6 +72,18 @@ public static class Loc
     public static string T(string key) =>
         Tables[Current].TryGetValue(key, out var v) ? v : key;
 
+    /// <summary>「3 天前」這類相對時間（首頁「最近位置」用）；超過一個月顯示日期</summary>
+    public static string RelativeTime(DateTime utc)
+    {
+        var ago = DateTime.UtcNow - utc;
+        if (ago.TotalMinutes < 1) return T("RelJustNow");
+        if (ago.TotalHours < 1) return string.Format(T("RelMinutes"), (int)ago.TotalMinutes);
+        if (ago.TotalDays < 1) return string.Format(T("RelHours"), (int)ago.TotalHours);
+        if (ago.TotalDays < 2) return T("RelYesterday");
+        if (ago.TotalDays < 30) return string.Format(T("RelDays"), (int)ago.TotalDays);
+        return utc.ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    }
+
     static readonly Dictionary<string, Dictionary<string, string>> Tables = new()
     {
         [ZhHant] = new()
@@ -144,6 +156,24 @@ public static class Loc
             ["AudioCodec"] = "音訊編碼",
             ["AudioInfo"] = "音訊",
             ["AudioFmt"] = "{0} 聲道 / {1} Hz",
+            // 電影院介面：海報牆、繼續觀看、最近位置
+            ["ContinueWatching"] = "繼續觀看",
+            ["RecentLocations"] = "最近位置",
+            ["RemoveFromContinueWatching"] = "從「繼續觀看」移除",
+            ["RemoveFromRecents"] = "從「最近位置」移除",
+            ["ResumedFrom"] = "從 {0} 繼續播放",
+            ["StartOver"] = "從頭播放",
+            ["Watched"] = "已看完",
+            ["UpOneLevel"] = "上一層",
+            ["CannotOpenLocation"] = "⚠ 無法開啟這個位置，請確認磁碟或 NAS 已連線",
+            ["ContinueVideoMissing"] = "⚠ 這部影片已經不在那個資料夾裡，可能改名或搬走了",
+            ["HomeHint"] = "選好模式後按「選擇資料夾」，或直接把資料夾拖進視窗。看過的影片和開過的位置會列在這裡。",
+            ["PickTitle"] = "選擇要看的片（{0} 個資料夾、{1} 部影片）",
+            ["RelJustNow"] = "剛剛",
+            ["RelMinutes"] = "{0} 分鐘前",
+            ["RelHours"] = "{0} 小時前",
+            ["RelYesterday"] = "昨天",
+            ["RelDays"] = "{0} 天前",
         },
         [ZhHans] = new()
         {
@@ -215,6 +245,24 @@ public static class Loc
             ["AudioCodec"] = "音频编码",
             ["AudioInfo"] = "音频",
             ["AudioFmt"] = "{0} 声道 / {1} Hz",
+            // 电影院界面：海报墙、继续观看、最近位置
+            ["ContinueWatching"] = "继续观看",
+            ["RecentLocations"] = "最近位置",
+            ["RemoveFromContinueWatching"] = "从“继续观看”移除",
+            ["RemoveFromRecents"] = "从“最近位置”移除",
+            ["ResumedFrom"] = "从 {0} 继续播放",
+            ["StartOver"] = "从头播放",
+            ["Watched"] = "已看完",
+            ["UpOneLevel"] = "上一层",
+            ["CannotOpenLocation"] = "⚠ 无法打开这个位置，请确认磁盘或 NAS 已连接",
+            ["ContinueVideoMissing"] = "⚠ 这个视频已经不在那个文件夹里，可能改名或移走了",
+            ["HomeHint"] = "选好模式后点“选择文件夹”，或直接把文件夹拖进窗口。看过的视频和打开过的位置会列在这里。",
+            ["PickTitle"] = "选择要看的片（{0} 个文件夹、{1} 个视频）",
+            ["RelJustNow"] = "刚刚",
+            ["RelMinutes"] = "{0} 分钟前",
+            ["RelHours"] = "{0} 小时前",
+            ["RelYesterday"] = "昨天",
+            ["RelDays"] = "{0} 天前",
         },
         [En] = new()
         {
@@ -286,6 +334,24 @@ public static class Loc
             ["AudioCodec"] = "Audio codec",
             ["AudioInfo"] = "Audio",
             ["AudioFmt"] = "{0} ch / {1} Hz",
+            // Cinema UI: poster wall, Continue Watching, Recent Locations
+            ["ContinueWatching"] = "Continue Watching",
+            ["RecentLocations"] = "Recent Locations",
+            ["RemoveFromContinueWatching"] = "Remove from Continue Watching",
+            ["RemoveFromRecents"] = "Remove from Recent Locations",
+            ["ResumedFrom"] = "Resuming from {0}",
+            ["StartOver"] = "Start Over",
+            ["Watched"] = "Watched",
+            ["UpOneLevel"] = "Up One Level",
+            ["CannotOpenLocation"] = "⚠ Can't open this location. Make sure the drive or NAS is connected.",
+            ["ContinueVideoMissing"] = "⚠ This video is no longer in that folder. It may have been renamed or moved.",
+            ["HomeHint"] = "Pick a mode, then choose a folder or drag one onto the window. Videos you watch and folders you open will show up here.",
+            ["PickTitle"] = "Pick something to watch ({0} folders, {1} videos)",
+            ["RelJustNow"] = "just now",
+            ["RelMinutes"] = "{0} min ago",
+            ["RelHours"] = "{0} hr ago",
+            ["RelYesterday"] = "yesterday",
+            ["RelDays"] = "{0} days ago",
         },
     };
 }
