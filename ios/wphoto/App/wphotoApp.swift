@@ -49,6 +49,13 @@ struct WphotoApp: App {
         WindowGroup {
             ModeSelectView()
                 .preferredColorScheme(.dark)
+                .macWindowSetup()
+        }
+        // Mac 選單列：開資料夾、播放控制、照片換張（iPhone／iPad 不加）
+        .commands {
+            if MacSupport.isMac {
+                MacMenuCommands()
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             // 進背景前把看劇進度立刻寫入（平常是延遲 1 秒批次寫入）

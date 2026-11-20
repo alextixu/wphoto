@@ -103,3 +103,9 @@
 /* UI refresh (2026-10) */
 "Actions" = "Actions";
 "PlaybackPosition" = "Playback position";
+
+/* Mac */
+"MenuOpenFolder" = "Open Folder…";
+"MenuPlayback" = "Playback";
+"MenuShowInfo" = "Show Shooting Info";
+"MenuHideInfo" = "Hide Shooting Info";

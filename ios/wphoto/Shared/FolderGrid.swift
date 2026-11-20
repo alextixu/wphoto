@@ -71,10 +71,14 @@ struct FolderBackButton: ViewModifier {
                             }
                         }
                         .accessibilityLabel(Text("UpOneLevel"))
-                        // 鍵盤（iPad／Mac）：⌘↑ 回上一層，與 Finder 相同
-                        .keyboardShortcut(.upArrow, modifiers: .command)
+                        // 鍵盤（iPad）：⌘↑ 回上一層，與 Finder 相同；Mac 上掛在選單列「檔案」選單（下方 macMenuFolder）
+                        .keyboardShortcut(MacSupport.isMac ? nil : KeyboardShortcut(.upArrow, modifiers: .command))
                     }
                 }
             }
+            // Mac 選單列「檔案」：開啟資料夾（⌘O）、上一層（⌘↑）
+            .macMenuFolder(MacMenu.Folder(canGoUp: session.canGoUp,
+                                          open: { [session] in MacFolderPicker.present { session.open($0) } },
+                                          goUp: { [session] in session.goUp() }))
     }
 }

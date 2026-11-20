@@ -163,6 +163,7 @@ struct VLCPlayerScreen: View {
         }
         // 開檔與播放中不讓螢幕自動關閉（AVPlayer 會自己處理，VLC 不會）；暫停、播完或關閉時還原
         .keepsScreenAwake(controller.isOpening || controller.isPlaying)
+        .macMenuPlayer(macMenuActions)
         // 鎖定畫面或切到其他 App：暫停（VLC 沒有子母畫面與鎖定畫面控制）；
         // .inactive（控制中心、來電橫幅）不暫停
         .onChange(of: scenePhase) { _, phase in
@@ -282,15 +283,18 @@ struct VLCPlayerScreen: View {
 
     // MARK: - 鍵盤快捷鍵（Mac、iPad 外接鍵盤）
 
-    /// 放在一直存在的隱形按鈕上：控制列自動隱藏後快捷鍵仍然有效
+    /// 放在一直存在的隱形按鈕上：控制列自動隱藏後快捷鍵仍然有效。
+    /// Mac 上空白鍵與 ←／→ 改由選單列的「播放」選單負責（macMenuPlayer），這裡只留 Esc，按鍵才不會重複
     private var keyboardShortcuts: some View {
         ZStack {
-            Button("Play") { controller.togglePlay(); showControls() }
-                .keyboardShortcut(.space, modifiers: [])
-            Button("Back10") { controller.jump(seconds: -10); jumpCount += 1; showControls() }
-                .keyboardShortcut(.leftArrow, modifiers: [])
-            Button("Forward10") { controller.jump(seconds: 10); jumpCount += 1; showControls() }
-                .keyboardShortcut(.rightArrow, modifiers: [])
+            if !MacSupport.isMac {
+                Button("Play") { togglePlayFromKeyboard() }
+                    .keyboardShortcut(.space, modifiers: [])
+                Button("Back10") { jumpFromKeyboard(-10) }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                Button("Forward10") { jumpFromKeyboard(10) }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+            }
             Button("Close") { dismiss() }
                 .keyboardShortcut(.cancelAction)
         }
@@ -298,6 +302,27 @@ struct VLCPlayerScreen: View {
         .opacity(0)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private func togglePlayFromKeyboard() {
+        controller.togglePlay()
+        showControls()
+    }
+
+    private func jumpFromKeyboard(_ seconds: Int) {
+        controller.jump(seconds: seconds)
+        jumpCount += 1
+        showControls()
+    }
+
+    /// Mac 選單列「播放」選單的內容（鍵盤快捷鍵也掛在選單上）
+    private var macMenuActions: MacMenu.Player {
+        MacMenu.Player(isPlaying: controller.isPlaying,
+                       isFill: controller.isFill,
+                       togglePlay: { togglePlayFromKeyboard() },
+                       back: { jumpFromKeyboard(-10) },
+                       forward: { jumpFromKeyboard(10) },
+                       toggleFill: { controller.setFill(!controller.isFill); interaction += 1 })
     }
 
     // MARK: - 控制列

@@ -103,3 +103,9 @@
 /* UI 翻新（2026-10） */
 "Actions" = "操作";
 "PlaybackPosition" = "播放位置";
+
+/* Mac */
+"MenuOpenFolder" = "打开文件夹…";
+"MenuPlayback" = "播放";
+"MenuShowInfo" = "显示拍摄信息";
+"MenuHideInfo" = "隐藏拍摄信息";

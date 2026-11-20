@@ -45,12 +45,25 @@ struct PhotoDetailView: View {
         .statusBarHidden(chromeHidden)
         // 換張時輕微觸覺回饋（滑動、方向鍵都會觸發）
         .sensoryFeedback(.selection, trigger: index)
+        // Mac 選單列「顯示方式」：上一張、下一張、拍攝資訊
+        .macMenuPhoto(MacMenu.Photo(showsInfo: showInfo,
+                                    previous: { showPrevious() },
+                                    next: { showNext() },
+                                    toggleInfo: { showInfo.toggle() }))
         // compact 寬度：拍攝資訊是底部 sheet；轉成 regular 時 binding 變 false，sheet 自動收掉
         .sheet(isPresented: Binding(get: { showInfo && sizeClass != .regular }, set: { showInfo = $0 })) {
             InfoSheet(file: file)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+    }
+
+    private func showPrevious() {
+        withAnimation(reduceMotion ? nil : .default) { index = max(0, index - 1) }
+    }
+
+    private func showNext() {
+        withAnimation(reduceMotion ? nil : .default) { index = min(files.count - 1, index + 1) }
     }
 
     /// 照片區：黑底 + 分頁 + 鍵盤快捷鍵 + 頂列
@@ -70,14 +83,17 @@ struct PhotoDetailView: View {
             .ignoresSafeArea()
             .onTapGesture { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { chromeHidden.toggle() } }
 
-            // 鍵盤快捷鍵（Mac、iPad 外接鍵盤）：左右方向鍵換張、⌘I 拍攝資訊、Esc 關閉
+            // 鍵盤快捷鍵（Mac、iPad 外接鍵盤）：左右方向鍵換張、⌘I 拍攝資訊、Esc 關閉。
+            // Mac 上換張與 ⌘I 改由選單列的「顯示方式」選單負責（macMenuPhoto），這裡只留 Esc
             ZStack {
-                Button("Back") { withAnimation(reduceMotion ? nil : .default) { index = max(0, index - 1) } }
-                    .keyboardShortcut(.leftArrow, modifiers: [])
-                Button("Next") { withAnimation(reduceMotion ? nil : .default) { index = min(files.count - 1, index + 1) } }
-                    .keyboardShortcut(.rightArrow, modifiers: [])
-                Button("ShootingInfo") { showInfo.toggle() }
-                    .keyboardShortcut("i")
+                if !MacSupport.isMac {
+                    Button("Back") { showPrevious() }
+                        .keyboardShortcut(.leftArrow, modifiers: [])
+                    Button("Next") { showNext() }
+                        .keyboardShortcut(.rightArrow, modifiers: [])
+                    Button("ShootingInfo") { showInfo.toggle() }
+                        .keyboardShortcut("i")
+                }
                 Button("Close") { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
