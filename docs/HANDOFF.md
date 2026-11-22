@@ -115,11 +115,34 @@
 - 配色概念是「熄燈後的放映廳」：唯一的彩色是絨布紅，其餘都是暖黑與象牙白。token 都在 `Shared/Theme.swift`，檔案開頭有規則。不要再加第二個強調色，也不要用藍色。
 - 紅色對深色底只有 3.3:1，只能當填色與圖示，不能當小字。紅色只留給播放、進度、主要按鈕；文字與導覽列用象牙白。
 - 卡片是霧面實色（拿掉 Liquid Glass），圓角縮小，標題用襯線字（`App/wphotoApp.swift` 的 UINavigationBar appearance），分區標題是寬字距小字。
-- 系統控制項的藍色用 `project.yml` 的全域 AccentColor 換掉。**檔案挑選器是例外**：它是系統畫面，`wphotoApp.swift` 雖然設了 tintColor，實測同一個版本有時紅有時藍，原因不明。要徹底解決得換掉 `.fileImporter`，但那條路徑關係到 NAS 的存取權限，目前不值得冒險。
+- 系統控制項的藍色用 `project.yml` 的全域 AccentColor 換掉，但那只有 SwiftUI 吃；UIKit 的預設 tint 仍是 systemBlue。檔案挑選器（`.fileImporter`）是「檔案」行程畫的遠端畫面，tint 只在宿主 view 進入視窗、trait 改變時送過去，之後不補送。以前用 `UIView.appearance(whenContainedInInstancesOf:)` 會比那一刻晚，所以有時紅有時藍。現在 `wphotoApp.swift` 在視窗出現時把 `window.tintColor` 設成象牙白，挑選器每次都是象牙白（2026-11 在 iPhone、iPad 模擬器實測）。`.fileImporter` 與 security-scoped 存取沒動。
 - 照片模式不開紅光（`CinemaBackdrop(glow: false)`），避免影響看照片的色偏判斷。
-- 字幕字級在 `VLCPlayerScreen.swift` 的 `subtitleFontSize`：影片高度 6.5%、同時看寬度，上限是一行放得下 16 字，下限 20pt。**不要再加固定點數上限**：舊版 56pt 上限在 4K 視窗只剩畫面的 2.6%。
+- 字幕字級在 `VLCPlayerScreen.swift` 的 `SubtitleOverlay.subtitleFontSize`：影片高度 6.5%、同時看寬度，上限是一行放得下 16 字，下限 20pt。**不要再加固定點數上限**：舊版 56pt 上限在 4K 視窗只剩畫面的 2.6%。
 - 參考值：YouTube 預設字幕實測是播放器高度的 4.44%（360p 到 4K 都一樣，沒有上限）；Netflix 規範沒有百分比，只要求相對影片解析度、繁中一行 16 字、英文 42 字。
-- AVPlayer 的內嵌字幕由系統繪製，跟隨 iOS 的字幕設定，大小沒有實測。
+- AVPlayer 的內嵌字幕由系統繪製，跟隨 iOS 的字幕設定。實測約影片高度 4.2–4.4%（同 YouTube），有深色底框，是 VLC 路徑的 5–7 成。使用者決定維持系統繪製（2026-11-18）。`AVPlayerItem.textStyleRules` 只對 WebVTT 有效，MP4／MOV 常見的 tx3g 字幕改不了大小；iOS 27 把 `textStyleRules` 設成 nil 會閃退。要一致只能用 `AVPlayerItemLegibleOutput` 自己畫（子母畫面會沒字幕）。
+- AVPlayer 播放畫面不再疊自己的關閉鈕：AVPlayerViewController 放在 fullScreenCover 裡時 AVKit 會顯示自己的關閉鈕（和子母畫面、AirPlay 同一組）。Mac（Designed for iPad）仍保留 ChromeButton：游標沒移上去時 AVKit 沒有自己的關閉鈕；游標懸停時會不會重疊還沒有人實際看過。
+
+### Mac 體驗（2026-11）
+
+- Mac 專屬程式在 `ios/wphoto/Mac/MacMenu.swift`，一律用 `MacSupport.isMac`（`ProcessInfo.isiOSAppOnMac`）分支，不影響 iPhone／iPad。
+- **畫面裡隱形按鈕的 `.keyboardShortcut` 不會出現在 Mac 選單列**，只有 Scene 的 `.commands` 會。所以 Mac 上的快捷鍵都掛在選單：各畫面用 `.macMenuFolder／.macMenuPhoto／.macMenuPlayer` 把動作登記到 `MacMenu.shared`，`MacMenuCommands` 依登記內容啟用。新畫面要加快捷鍵時照這個做法，並把 Mac 上的隱形按鈕關掉，否則同一個按鍵會觸發兩次。
+- ←／→ 同時是「上一張／下一張」與「倒退／快轉」：快捷鍵只掛在目前有登記的那一組。
+- AVPlayer 畫面（`PlayerScreen.swift`）的鍵盤由 AVKit 處理，沒有登記到選單。
+- 視窗最小 900×640 iPad 點（Mac 上顯示為 77%，約 693×493）；`MacSupport.minimumWindowSize`。
+- 播放不休眠實測：VLC 是 `ProcessInfo.beginActivity`（reason「wphoto playback」），暫停後 3～4 秒放掉；AVPlayer 是 CoreMedia 自己的 assertion，暫停約 2 秒放掉。用 `pmset -g assertions` 每秒查一次。
+- Mac 上測試：shell 讀不到沙盒，App 自己容器裡的資料夾也過不了 security-scoped 檢查，資料夾畫面一定要用檔案挑選器選。不要用合成的 NSEvent 送按鍵，會閃退。
+- 新增檔案後要 `xcodegen generate`，本機專案要再加回 `DEVELOPMENT_TEAM` 與 Run = Release。免費描述檔 7 天到期，而且 Xcode 會沿用還沒過期的舊描述檔，重裝不一定延長。
+- **還沒有人實際操作過**：實體按鍵（空白鍵、←→、Esc、⌘↑）、⌘O 選資料夾、海報牆在最小視窗的版面、播放中放著超過 1 分鐘螢幕不關。選單項目本身與防休眠 assertion 已用程式確認。
+
+### Windows 電影院介面（2026-11-03）
+
+- 配色在 `Theme.xaml`，色票與 iOS 的 `Shared/Theme.swift` 相同。它在 `App.xaml` 排在 WPF-UI 字典後面，靠同名 key 蓋過 WPF-UI 的藍色強調色與冷灰；WPF-UI 4.3 的控制項都用 DynamicResource，所以這樣就會生效。紅色只當填色與圖示，WPF-UI 的「強調色文字」改成象牙白。
+- 看劇模式改成一層一層瀏覽（`TheaterLibrary.cs`）：子資料夾是 2:3 海報牆，影片是卡片；讀過的層有快取，海報同時最多讀 4 個資料夾。照片模式維持遞迴掃描。**行為變更**：不再把子資料夾裡的影片全部攤在一起。
+- 封面依序找 poster、folder、cover、fanart（也認「片名-poster.jpg」），都沒有就用首字佔位。和 iOS 不同：不拿其他圖片或影片截圖當封面，避免為了封面讀 NAS 上的影片。
+- 續看進度在 `WatchProgress.cs`，存 `%LOCALAPPDATA%\wphoto\watch-progress.json`，規則同 iOS：不到 30 秒不記、剩不到 5% 算看完、最多 500 筆。續播用 VLC 的 `:start-time`。
+- 最近位置在 `RecentLocations.cs`，存 `%LOCALAPPDATA%\wphoto\recent-locations.json`。首頁只讀這兩個 JSON，啟動時不碰 NAS，點了才開。
+- 這一輪在 Mac 上用 `dotnet build -p:EnableWindowsTargeting=true` 編譯通過（0 警告），**畫面還沒在 Windows 上看過**：版面與字型、`:start-time` 續播、海報陰影與停留動畫在 VideoView 疊層裡會不會卡、右鍵移除、NAS 上的速度。
+- 還沒做：在 Windows 上跑 `.\publish.ps1` 打包新版 Release zip，並用 CC0 示範素材重拍 `docs/screenshot.png`、`docs/screenshot-modes.png`（README 已註明目前是舊版外觀）。
 
 ### 分支與合併（2026-10-31）
 

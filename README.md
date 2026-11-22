@@ -35,7 +35,9 @@ Opens an 80 MB RAF in a blink by reading the camera's embedded full-size preview
 - **Continue Watching** — both players resume where you stopped, and the home screen lists unfinished videos and recent locations
 - **Plays almost anything** — MP4 and MOV through AVPlayer keep HDR, Dolby Vision, Picture in Picture and AirPlay; MKV, AVI, TS, WebM and more play through VLCKit
 - **Subtitles that fit any screen** — text scales with the picture from a phone to a 4K display, with dual subtitles and embedded MKV text tracks
+- **System player for MP4 and MOV** — Close, Picture in Picture and AirPlay share one button group at the top left; embedded subtitles are drawn by iOS and follow Settings › Accessibility › Subtitles & Captioning
 - **Stays awake while you watch** — the screen stays on during playback and long downloads, and sleeps normally when paused
+- **Mac menu bar and keyboard** — on Mac: Open Folder `⌘O`, Up One Level `⌘↑`, `Space` to play or pause, `←` `→` to skip 10 seconds or change photo, `⌘I` for shooting info, `Esc` to close; the window resizes freely
 - **RAW and HEIF photos** — thumbnail grid, pinch to zoom with full-resolution reload, and a full shooting info panel
 - **Folders from anywhere in Files** — iCloud Drive, on-device storage, or a NAS connected in the Files app
 
@@ -49,7 +51,9 @@ Full details, player selection and subtitle rules are in [`ios/README.md`](ios/R
 - **繼續觀看**：兩種播放器都會記住看到哪裡，首頁列出看到一半的影片與最近位置
 - **幾乎都能播**：MP4、MOV 走 AVPlayer，保留 HDR、杜比視界、子母畫面與 AirPlay；MKV、AVI、TS、WebM 等走 VLCKit
 - **任何螢幕都清楚的字幕**：字幕隨畫面等比例縮放，從手機到 4K 都適用，支援雙字幕與 MKV 內嵌文字字幕
+- **MP4、MOV 用系統播放器**：關閉、子母畫面、AirPlay 在左上角同一組按鈕；內嵌字幕由系統繪製，字級跟著「設定 › 輔助使用 › 字幕與隱藏式字幕」
 - **看片不休眠**：播放與長時間下載時螢幕不會自動關閉，暫停後恢復正常休眠
+- **Mac 選單列與鍵盤操作**：在 Mac 上可用開啟資料夾 `⌘O`、上一層 `⌘↑`、空白鍵播放／暫停、`←` `→` 倒退快轉 10 秒或換張、`⌘I` 拍攝資訊、`Esc` 關閉；視窗可自由縮放
 - **RAW 與 HEIF 照片**：縮圖牆、捏合縮放並重新載入完整解析度、完整拍攝資訊面板
 - **從「檔案」開啟任何位置**：iCloud 雲碟、本機，或在「檔案」App 連接的 NAS
 
@@ -65,6 +69,10 @@ Two modes at startup · 啟動時選擇模式：
 
 ![Windows mode picker](docs/screenshot-modes.png)
 
+> These two screenshots show the previous look. The cinema-style interface, poster wall and Continue Watching below are in the source but not yet in a release.
+>
+> 這兩張截圖是舊版外觀。下面的電影院風格介面、海報牆與繼續觀看已在原始碼中，尚未發行新版。
+
 ### Photo mode · 照片模式
 
 - **20+ RAW formats** — RAF, ARW, CR2/CR3, NEF, DNG, ORF, RW2 and more (via LibRaw). Embedded-preview fast path, full decode as fallback
@@ -76,7 +84,11 @@ Two modes at startup · 啟動時選擇模式：
 
 ### Theater mode · 看劇模式
 
-- **Episode picker with covers** — open a whole season folder and pick an episode from a thumbnail grid (Netflix-style)
+- **Cinema-style interface** — warm black with a single velvet red accent, the same look as the iPhone and iPad app
+- **Poster wall** — movie folders appear as 2:3 posters with title and year, using your `poster`, `folder`, `cover` or `fanart` image; folders without one get a serif initial
+- **Browse one folder at a time** — open a whole library, even on a NAS, and step into a movie or season; `Backspace` or `Alt+↑` goes back up
+- **Continue Watching** — videos resume where you stopped, episode cards show a progress bar or a check mark, and the home screen lists unfinished videos and recent folders, which open only when you click them
+- **Episode picker with covers** — pick an episode from a thumbnail grid (Netflix-style), with progress and watched marks
 - **Plays everything** — MP4 (XAVC S/HS), MOV, MKV, MTS/M2TS (AVCHD), AVI, MXF via bundled LibVLC; 10-bit H.265 / Dolby Vision files just work
 - **Subtitles** — switch embedded subtitle tracks, auto-loads external .srt/.ass/.ssa/.sub/.vtt from the folder (incl. `Subs` subfolder)
 - **Full playback controls** — seekable progress bar, playback speed 0.5x–2.0x, play/pause
@@ -94,7 +106,11 @@ Two modes at startup · 啟動時選擇模式：
 - 遞迴掃描子資料夾、依類型篩選
 
 **看劇模式**
-- 封面選集畫面：選整季資料夾後用縮圖卡片挑集數
+- 電影院風格介面：暖黑配單一絨布紅，與 iPhone、iPad 版一致
+- 電影海報牆：電影資料夾以 2:3 海報呈現，顯示片名與年份，封面取自 `poster`、`folder`、`cover` 或 `fanart`，沒有封面就顯示片名首字
+- 一層一層瀏覽：開整個片庫（NAS 也可以），點海報進去；`Backspace` 或 `Alt+↑` 回上一層
+- 繼續觀看：從上次停下的地方接著播，集數卡片顯示進度條或打勾；首頁列出看到一半的影片與最近開過的位置，點了才開，啟動時不會連 NAS
+- 封面選集畫面：用縮圖卡片挑集數，卡片上有進度與看完標記
 - 內建 LibVLC：MP4、MOV、MKV、MTS/M2TS、AVI、MXF 全都能播，10-bit H.265 免裝解碼器
 - 字幕：內嵌字幕軌切換、自動載入同資料夾（含 Subs）的外掛字幕
 - 進度條拖曳跳轉、0.5x–2.0x 倍速、播放/暫停
@@ -151,6 +167,8 @@ Grab the latest zip from [Releases](https://github.com/alextixu/wphoto/releases)
 | Seek −10s / +10s | `←` `→` |
 | Fullscreen | `F11` (exit: `Esc`) |
 | Episode picker | 「選集」 toolbar button |
+| Up one folder (Theater mode) | `Backspace` or `Alt+↑` |
+| Remove from Continue Watching / Recent Locations | Right-click the item |
 | Open folder | Button, or drag & drop a folder onto the window |
 
 ### Build from source · 從原始碼建置
